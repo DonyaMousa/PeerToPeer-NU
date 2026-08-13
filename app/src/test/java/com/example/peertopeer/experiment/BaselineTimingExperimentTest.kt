@@ -1,10 +1,10 @@
-package com.example.peertopeer.routing
+package com.example.peertopeer.experiment
 
 import com.example.peertopeer.domain.model.Edge
 import com.example.peertopeer.domain.model.Graph
 import com.example.peertopeer.domain.model.Node
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import com.example.peertopeer.routing.DijkstraEngine
+import org.junit.Assert
 import org.junit.Test
 
 class BaselineTimingExperimentTest {
@@ -56,7 +56,7 @@ class BaselineTimingExperimentTest {
                         destination = testGraph.destination
                     )
 
-                assertNotNull(route)
+                Assert.assertNotNull(route)
             }
 
             val measurementsNs =
@@ -77,13 +77,13 @@ class BaselineTimingExperimentTest {
                 val end =
                     System.nanoTime()
 
-                assertNotNull(route)
+                Assert.assertNotNull(route)
 
                 /*
                  * A line graph containing N nodes should produce
                  * a source-to-destination path containing N nodes.
                  */
-                assertEquals(
+                Assert.assertEquals(
                     nodeCount,
                     route!!.path.size
                 )

@@ -1,9 +1,12 @@
-package com.example.peertopeer.routing
+package com.example.peertopeer.experiment
 
 import com.example.peertopeer.domain.model.Edge
 import com.example.peertopeer.domain.model.Graph
 import com.example.peertopeer.domain.model.Node
-import org.junit.Assert.assertEquals
+import com.example.peertopeer.routing.DijkstraEngine
+import com.example.peertopeer.routing.RoutingTable
+import com.example.peertopeer.routing.RoutingTelemetry
+import org.junit.Assert
 import org.junit.Test
 
 class BaselineExperimentTest {
@@ -52,7 +55,7 @@ class BaselineExperimentTest {
                     destination = d
                 )
 
-            assertEquals(
+            Assert.assertEquals(
                 listOf(a, b, d),
                 route!!.path
             )
@@ -82,7 +85,7 @@ class BaselineExperimentTest {
                     destination = d
                 )
 
-            assertEquals(
+            Assert.assertEquals(
                 listOf(a, c, d),
                 route!!.path
             )
@@ -100,37 +103,37 @@ class BaselineExperimentTest {
         println("==================================")
         println()
 
-        assertEquals(
+        Assert.assertEquals(
             200,
             telemetry.routeRequests
         )
 
-        assertEquals(
+        Assert.assertEquals(
             198,
             telemetry.cacheHits
         )
 
-        assertEquals(
+        Assert.assertEquals(
             2,
             telemetry.cacheMisses
         )
 
-        assertEquals(
+        Assert.assertEquals(
             2,
             telemetry.routeCalculations
         )
 
-        assertEquals(
+        Assert.assertEquals(
             1,
             telemetry.cacheInvalidations
         )
 
-        assertEquals(
+        Assert.assertEquals(
             2,
             telemetry.successfulRoutes
         )
 
-        assertEquals(
+        Assert.assertEquals(
             0,
             telemetry.unreachableRoutes
         )
