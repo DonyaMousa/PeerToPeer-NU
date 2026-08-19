@@ -1,5 +1,5 @@
 package com.example.peertopeer.simulation
-
+import com.example.peertopeer.network.PacketDropReason
 class TimedNetworkTelemetry {
 
     private val results =
@@ -104,5 +104,23 @@ class TimedNetworkTelemetry {
 
         return deliveredPackets().toDouble() /
                 experimentDuration.toDouble()
+    }
+    fun dropsByReason(
+        reason: PacketDropReason
+    ): Int {
+
+        return results.count {
+            it.dropped &&
+                    it.dropReason == reason
+        }
+    }
+    fun allDropReasons():
+            Map<PacketDropReason, Int> {
+
+        return PacketDropReason
+            .entries
+            .associateWith { reason ->
+                dropsByReason(reason)
+            }
     }
 }

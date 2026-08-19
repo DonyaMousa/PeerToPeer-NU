@@ -2,6 +2,7 @@ package com.example.peertopeer.simulation
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import com.example.peertopeer.network.PacketDropReason
 
 class TimedNetworkTelemetryTest {
 
@@ -62,7 +63,8 @@ class TimedNetworkTelemetryTest {
                 createdAt = 3L,
                 deliveredAt = null,
                 delivered = false,
-                dropped = true
+                dropped = true,
+                dropReason = PacketDropReason.QUEUE_FULL
             )
         )
 
@@ -85,6 +87,19 @@ class TimedNetworkTelemetryTest {
             0.75,
             telemetry.packetDeliveryRatio(),
             0.0001
+        )
+        assertEquals(
+            1,
+            telemetry.dropsByReason(
+                PacketDropReason.QUEUE_FULL
+            )
+        )
+
+        assertEquals(
+            0,
+            telemetry.dropsByReason(
+                PacketDropReason.RETRY_EXHAUSTED
+            )
         )
 
         /*
@@ -163,6 +178,45 @@ class TimedNetworkTelemetryTest {
                     experimentDuration = 20L
                 )
             } packets/time-unit"
+        )
+        println(
+            "Queue-full drops: ${
+                telemetry.dropsByReason(
+                    PacketDropReason.QUEUE_FULL
+                )
+            }"
+        )
+
+        println(
+            "Retry-exhausted drops: ${
+                telemetry.dropsByReason(
+                    PacketDropReason.RETRY_EXHAUSTED
+                )
+            }"
+        )
+
+        println(
+            "TTL-expired drops: ${
+                telemetry.dropsByReason(
+                    PacketDropReason.TTL_EXPIRED
+                )
+            }"
+        )
+
+        println(
+            "No-route drops: ${
+                telemetry.dropsByReason(
+                    PacketDropReason.NO_ROUTE
+                )
+            }"
+        )
+
+        println(
+            "Link-unavailable drops: ${
+                telemetry.dropsByReason(
+                    PacketDropReason.LINK_UNAVAILABLE
+                )
+            }"
         )
 
         println(

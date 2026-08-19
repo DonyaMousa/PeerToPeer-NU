@@ -40,7 +40,7 @@ class TrafficGeneratorTest {
         )
 
         assertEquals(
-            "MSG-0",
+            "MSG-A-0",
             generatedPackets[0].messageId
         )
 
@@ -50,7 +50,7 @@ class TrafficGeneratorTest {
         )
 
         assertEquals(
-            "MSG-1",
+            "MSG-A-1",
             generatedPackets[1].messageId
         )
 
@@ -60,7 +60,7 @@ class TrafficGeneratorTest {
         )
 
         assertEquals(
-            "MSG-2",
+            "MSG-A-2",
             generatedPackets[2].messageId
         )
 
@@ -70,7 +70,7 @@ class TrafficGeneratorTest {
         )
 
         assertEquals(
-            "MSG-3",
+            "MSG-A-3",
             generatedPackets[3].messageId
         )
 

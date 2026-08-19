@@ -1,11 +1,14 @@
 package com.example.peertopeer.simulation
 
+import com.example.peertopeer.network.PacketDropReason
+
 data class TimedDeliveryResult(
     val messageId: String,
     val createdAt: Long,
     val deliveredAt: Long?,
     val delivered: Boolean,
-    val dropped: Boolean
+    val dropped: Boolean,
+    val dropReason: PacketDropReason? = null
 ) {
 
     init {
@@ -31,10 +34,27 @@ data class TimedDeliveryResult(
                 "deliveredAt cannot be earlier than createdAt."
             }
 
+            require(dropReason == null) {
+                "Delivered packet cannot have a drop reason."
+            }
+
         } else {
 
             require(deliveredAt == null) {
                 "Undelivered packet cannot have deliveredAt."
+            }
+        }
+
+        if (dropped) {
+
+            require(dropReason != null) {
+                "Dropped packet must have a drop reason."
+            }
+
+        } else {
+
+            require(dropReason == null) {
+                "Non-dropped packet cannot have a drop reason."
             }
         }
     }

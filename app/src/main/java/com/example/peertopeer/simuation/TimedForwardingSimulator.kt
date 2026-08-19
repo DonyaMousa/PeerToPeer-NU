@@ -2,6 +2,8 @@ package com.example.peertopeer.simulation
 
 import com.example.peertopeer.network.Packet
 import com.example.peertopeer.network.PacketState
+import com.example.peertopeer.network.PacketDropReason
+
 
 class TimedForwardingSimulator(
     private val simulationEngine: SimulationEngine,
@@ -51,7 +53,8 @@ class TimedForwardingSimulator(
                     createdAt = packet.createdAt,
                     deliveredAt = null,
                     delivered = false,
-                    dropped = true
+                    dropped = true,
+                    dropReason = PacketDropReason.QUEUE_FULL
                 )
             )
         }
@@ -62,10 +65,6 @@ class TimedForwardingSimulator(
         completionTime: Long
     ) {
 
-        /*
-         * After B finishes processing,
-         * schedule B -> D delivery.
-         */
         val deliveryTime =
             completionTime +
                     relayToDestinationDelay

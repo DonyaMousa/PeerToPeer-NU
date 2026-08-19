@@ -56,7 +56,7 @@ class TrafficGenerator(
 
                 val packet =
                     Packet(
-                        messageId = "MSG-$index",
+                        messageId = "MSG-$sourceId-$index",
                         sourceId = sourceId,
                         destinationId = destinationId,
                         createdAt = generationTime,

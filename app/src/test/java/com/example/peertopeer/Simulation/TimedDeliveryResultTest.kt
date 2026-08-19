@@ -3,6 +3,7 @@ package com.example.peertopeer.simulation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.example.peertopeer.network.PacketDropReason
 
 class TimedDeliveryResultTest {
 
@@ -33,11 +34,13 @@ class TimedDeliveryResultTest {
                 createdAt = 2L,
                 deliveredAt = null,
                 delivered = false,
-                dropped = true
+                dropped = true,
+                dropReason = PacketDropReason.QUEUE_FULL
             )
 
-        assertNull(
-            result.endToEndLatency()
+        assertEquals(
+            PacketDropReason.QUEUE_FULL,
+            result.dropReason
         )
     }
 
