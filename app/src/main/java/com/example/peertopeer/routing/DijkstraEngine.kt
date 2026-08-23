@@ -7,7 +7,7 @@ import java.util.PriorityQueue
 class DijkstraEngine : RoutingEngine {
 
     private data class QueueEntry(
-        val node: Node,
+        val nodeId: String,
         val distance: Int
     )
 
@@ -17,15 +17,22 @@ class DijkstraEngine : RoutingEngine {
         destination: Node
     ): RouteResult? {
 
-        if (!graph.containsNode(source)) {
+        val sourceId = source.nodeId
+        val destinationId = destination.nodeId
+
+        // -------------------------------------------------
+        // VALIDATION
+        // -------------------------------------------------
+
+        if (!graph.containsNode(sourceId)) {
             return null
         }
 
-        if (!graph.containsNode(destination)) {
+        if (!graph.containsNode(destinationId)) {
             return null
         }
 
-        if (source == destination) {
+        if (sourceId == destinationId) {
             return RouteResult(
                 path = listOf(source),
                 totalCost = 0,
@@ -33,48 +40,67 @@ class DijkstraEngine : RoutingEngine {
             )
         }
 
-        val distances = mutableMapOf<String, Int>()
-        val previous = mutableMapOf<String, String?>()
+        // -------------------------------------------------
+        // DIJKSTRA STATE
+        // -------------------------------------------------
+
+        val distances =
+            mutableMapOf<String, Int>()
+
+        val previous =
+            mutableMapOf<String, String?>()
 
         for (node in graph.getNodes()) {
-            distances[node.nodeId] = Int.MAX_VALUE
-            previous[node.nodeId] = null
+
+            distances[node.nodeId] =
+                Int.MAX_VALUE
+
+            previous[node.nodeId] =
+                null
         }
 
-        distances[source.nodeId] = 0
+        distances[sourceId] = 0
 
-        val queue = PriorityQueue<QueueEntry>(
-            compareBy<QueueEntry> { it.distance }
-                .thenBy { it.node.nodeId }
-        )
+        val queue =
+            PriorityQueue<QueueEntry>(
+                compareBy<QueueEntry> { it.distance }
+                    .thenBy { it.nodeId }
+            )
 
         queue.add(
             QueueEntry(
-                node = source,
+                nodeId = sourceId,
                 distance = 0
             )
         )
 
+        // -------------------------------------------------
+        // MAIN ALGORITHM
+        // -------------------------------------------------
+
         while (queue.isNotEmpty()) {
 
             val current =
-                queue.poll() ?: continue
+                queue.poll()
 
             val currentId =
-                current.node.nodeId
+                current.nodeId
 
             val knownDistance =
                 distances[currentId]
                     ?: continue
 
             /*
-             * Ignore an outdated queue entry.
+             * Ignore outdated priority-queue entries.
              */
             if (current.distance != knownDistance) {
                 continue
             }
 
-            if (currentId == destination.nodeId) {
+            /*
+             * Destination reached with its shortest cost.
+             */
+            if (currentId == destinationId) {
                 break
             }
 
@@ -83,28 +109,40 @@ class DijkstraEngine : RoutingEngine {
 
             for (edge in neighbors) {
 
-                val neighbor =
-                    graph.getNode(edge.to)
-                        ?: continue
+                val neighborId =
+                    edge.to
+
+                val weight =
+                    edge.weight
 
                 /*
-                 * Protect against integer overflow.
+                 * Graph should already guarantee
+                 * positive weights.
                  */
-                if (current.distance >
-                    Int.MAX_VALUE - edge.weight
+                if (weight <= 0) {
+                    continue
+                }
+
+                /*
+                 * Protect against Int overflow.
+                 */
+                if (
+                    knownDistance >
+                    Int.MAX_VALUE - weight
                 ) {
                     continue
                 }
 
                 val newDistance =
-                    current.distance + edge.weight
-
-                val neighborId =
-                    neighbor.nodeId
+                    knownDistance + weight
 
                 val oldDistance =
                     distances[neighborId]
-                        ?: Int.MAX_VALUE
+                        ?: continue
+
+                // -----------------------------------------
+                // BETTER PATH
+                // -----------------------------------------
 
                 if (newDistance < oldDistance) {
 
@@ -116,15 +154,17 @@ class DijkstraEngine : RoutingEngine {
 
                     queue.add(
                         QueueEntry(
-                            node = neighbor,
+                            nodeId = neighborId,
                             distance = newDistance
                         )
                     )
                 }
 
-                /*
-                 * Equal-cost paths need deterministic handling.
-                 */
+                // -----------------------------------------
+                // EQUAL-COST PATH
+                // deterministic tie handling
+                // -----------------------------------------
+
                 else if (
                     newDistance == oldDistance
                 ) {
@@ -139,35 +179,51 @@ class DijkstraEngine : RoutingEngine {
 
                         previous[neighborId] =
                             currentId
-
-                        queue.add(
-                            QueueEntry(
-                                node = neighbor,
-                                distance = newDistance
-                            )
-                        )
                     }
                 }
             }
         }
 
+        // -------------------------------------------------
+        // CHECK REACHABILITY
+        // -------------------------------------------------
+
         val totalCost =
-            distances[destination.nodeId]
+            distances[destinationId]
                 ?: return null
 
         if (totalCost == Int.MAX_VALUE) {
             return null
         }
 
+        // -------------------------------------------------
+        // RECONSTRUCT PATH
+        // -------------------------------------------------
+
         val pathIds =
             mutableListOf<String>()
 
+        val reconstructionGuard =
+            mutableSetOf<String>()
+
         var currentId: String? =
-            destination.nodeId
+            destinationId
 
         while (currentId != null) {
 
+            /*
+             * Defensive protection against
+             * an invalid predecessor cycle.
+             */
+            if (!reconstructionGuard.add(currentId)) {
+                return null
+            }
+
             pathIds.add(currentId)
+
+            if (currentId == sourceId) {
+                break
+            }
 
             currentId =
                 previous[currentId]
@@ -175,15 +231,27 @@ class DijkstraEngine : RoutingEngine {
 
         pathIds.reverse()
 
-        if (pathIds.firstOrNull() != source.nodeId) {
+        if (
+            pathIds.firstOrNull()
+            != sourceId
+        ) {
             return null
         }
 
-        val path =
-            pathIds.mapNotNull { graph.getNode(it) }
+        // -------------------------------------------------
+        // CONVERT NODE IDS BACK TO Node OBJECTS
+        // -------------------------------------------------
 
-        if (path.size != pathIds.size) {
-            return null
+        val path =
+            mutableListOf<Node>()
+
+        for (nodeId in pathIds) {
+
+            val node =
+                graph.getNode(nodeId)
+                    ?: return null
+
+            path.add(node)
         }
 
         val nextHop =

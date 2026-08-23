@@ -6,6 +6,7 @@ data class TimedDeliveryResult(
     val messageId: String,
     val createdAt: Long,
     val deliveredAt: Long?,
+    val droppedAt: Long? = null,
     val delivered: Boolean,
     val dropped: Boolean,
     val dropReason: PacketDropReason? = null
@@ -13,58 +14,81 @@ data class TimedDeliveryResult(
 
     init {
         require(messageId.isNotBlank()) {
-            "messageId cannot be blank."
+            "messageId must not be blank"
         }
 
-        require(createdAt >= 0L) {
-            "createdAt cannot be negative."
+        require(createdAt >= 0) {
+            "createdAt must not be negative"
         }
 
         require(!(delivered && dropped)) {
-            "A packet cannot be both delivered and dropped."
+            "A packet cannot be both delivered and dropped"
         }
 
         if (delivered) {
-
             require(deliveredAt != null) {
-                "Delivered packet must have deliveredAt."
+                "Delivered packet must have deliveredAt"
             }
 
             require(deliveredAt >= createdAt) {
-                "deliveredAt cannot be earlier than createdAt."
+                "deliveredAt cannot be before createdAt"
+            }
+
+            require(droppedAt == null) {
+                "Delivered packet cannot have droppedAt"
             }
 
             require(dropReason == null) {
-                "Delivered packet cannot have a drop reason."
-            }
-
-        } else {
-
-            require(deliveredAt == null) {
-                "Undelivered packet cannot have deliveredAt."
+                "Delivered packet cannot have a drop reason"
             }
         }
 
         if (dropped) {
-
-            require(dropReason != null) {
-                "Dropped packet must have a drop reason."
+            require(deliveredAt == null) {
+                "Dropped packet cannot have deliveredAt"
             }
 
-        } else {
+            require(dropReason != null) {
+                "Dropped packet must have a drop reason"
+            }
 
+            if (droppedAt != null) {
+                require(droppedAt >= createdAt) {
+                    "droppedAt cannot be before createdAt"
+                }
+            }
+        }
+
+        if (!dropped) {
             require(dropReason == null) {
-                "Non-dropped packet cannot have a drop reason."
+                "Non-dropped packet cannot have a drop reason"
+            }
+
+            require(droppedAt == null) {
+                "Non-dropped packet cannot have droppedAt"
             }
         }
     }
 
     fun endToEndLatency(): Long? {
-
-        if (!delivered) {
-            return null
+        return if (delivered && deliveredAt != null) {
+            deliveredAt - createdAt
+        } else {
+            null
         }
+    }
 
-        return deliveredAt!! - createdAt
+    fun terminalTime(): Long? {
+        return when {
+            delivered -> deliveredAt
+            dropped -> droppedAt
+            else -> null
+        }
+    }
+
+    fun timeUntilTermination(): Long? {
+        val terminalTime = terminalTime() ?: return null
+
+        return terminalTime - createdAt
     }
 }
