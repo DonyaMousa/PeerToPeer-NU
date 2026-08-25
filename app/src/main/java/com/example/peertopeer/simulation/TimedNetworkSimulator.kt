@@ -3,12 +3,16 @@ package com.example.peertopeer.simulation
 import com.example.peertopeer.network.Packet
 import com.example.peertopeer.network.PacketDropReason
 import com.example.peertopeer.network.PacketState
+import com.example.peertopeer.simulation.experiment.instrumentation.ExperimentInstrumentation
+import com.example.peertopeer.simulation.experiment.record.PacketRecord
 
 class TimedNetworkSimulator(
     private val simulationEngine: SimulationEngine,
     private val eventDrivenLinkTransmitter: EventDrivenTimedLinkTransmitter,
     private val transmissionTelemetry:
-    TimedTransmissionTelemetry = TimedTransmissionTelemetry()
+    TimedTransmissionTelemetry = TimedTransmissionTelemetry(),
+    private val runId: String? = null,
+    private val instrumentation: ExperimentInstrumentation? = null
 ) {
 
     /*
@@ -29,7 +33,9 @@ class TimedNetworkSimulator(
                 simulationEngine = simulationEngine,
                 legacyTransmitter = linkTransmitter
             ),
-        transmissionTelemetry = transmissionTelemetry
+        transmissionTelemetry = transmissionTelemetry,
+        runId = null,
+        instrumentation = null
     )
 
     private val nodes =
@@ -39,9 +45,6 @@ class TimedNetworkSimulator(
      * Legacy / fixed B0 routes.
      *
      * messageId -> complete route
-     *
-     * Example:
-     * MSG-1 -> [A, B, D]
      */
     private val routes =
         mutableMapOf<String, List<String>>()
@@ -49,13 +52,17 @@ class TimedNetworkSimulator(
     /*
      * Dynamic routing mode.
      *
-     * Instead of keeping one fixed path for the whole
-     * packet lifetime, the simulator can ask a provider
-     * for a fresh route at every forwarding decision.
+     * Each forwarding decision can request
+     * a fresh route from the provider.
      */
     private val dynamicRouteProviders =
         mutableMapOf<String, TimedRouteProvider>()
 
+    /*
+     * Terminal packet results.
+     *
+     * One packet should appear here at most once.
+     */
     private val results =
         mutableListOf<TimedDeliveryResult>()
 
@@ -83,18 +90,21 @@ class TimedNetworkSimulator(
                 nodeId = nodeId,
                 queueCapacity = queueCapacity,
                 serviceTime = serviceTime,
-                simulationEngine = simulationEngine
-            ) {
-                    processedNodeId,
-                    packetState,
-                    completionTime ->
+                simulationEngine = simulationEngine,
+                onProcessed = {
+                        processedNodeId,
+                        packetState,
+                        completionTime ->
 
-                handleProcessedPacket(
-                    nodeId = processedNodeId,
-                    packetState = packetState,
-                    completionTime = completionTime
-                )
-            }
+                    handleProcessedPacket(
+                        nodeId = processedNodeId,
+                        packetState = packetState,
+                        completionTime = completionTime
+                    )
+                },
+                runId = runId,
+                instrumentation = instrumentation
+            )
 
         nodes[nodeId] =
             timedNode
@@ -122,23 +132,15 @@ class TimedNetworkSimulator(
             path.toList()
 
         /*
-         * A packet uses either fixed routing
+         * One packet uses either fixed routing
          * OR dynamic routing.
          */
-        dynamicRouteProviders.remove(messageId)
+        dynamicRouteProviders.remove(
+            messageId
+        )
     }
 
 
-    /*
-     * Original send API.
-     *
-     * Existing tests continue using:
-     *
-     * simulator.send(
-     *     packet,
-     *     listOf("A", "B", "D")
-     * )
-     */
     fun send(
         packet: Packet,
         path: List<String>
@@ -162,7 +164,9 @@ class TimedNetworkSimulator(
         )
 
         val initialState =
-            createInitialState(packet)
+            createInitialState(
+                packet
+            )
 
         val firstNextHop =
             path[1]
@@ -179,19 +183,6 @@ class TimedNetworkSimulator(
     // DYNAMIC ROUTING
     // =====================================================
 
-    /*
-     * New send API.
-     *
-     * Usage:
-     *
-     * simulator.send(
-     *     packet = packet,
-     *     routeProvider = provider
-     * )
-     *
-     * The provider will be consulted again after every
-     * intermediate node processes the packet.
-     */
     fun send(
         packet: Packet,
         routeProvider: TimedRouteProvider
@@ -202,19 +193,20 @@ class TimedNetworkSimulator(
         ] = routeProvider
 
         /*
-         * Make sure an old fixed route cannot accidentally
-         * remain attached to the same message ID.
+         * Prevent stale fixed routing state from
+         * remaining attached to the same message.
          */
         routes.remove(
             packet.messageId
         )
 
         val initialState =
-            createInitialState(packet)
+            createInitialState(
+                packet
+            )
 
         /*
-         * Calculate the route using the graph as it exists
-         * at the moment the packet is sent.
+         * Ask for a route using the current graph.
          */
         val initialPath =
             routeProvider.findPath(
@@ -263,14 +255,24 @@ class TimedNetworkSimulator(
             packetState.packet
 
         /*
-         * Destination has completed processing.
+         * Destination completed processing.
          */
         if (
             nodeId ==
             packet.destinationId
         ) {
 
-            results.add(
+            val alreadyFinished =
+                results.any {
+                    it.messageId ==
+                            packet.messageId
+                }
+
+            if (alreadyFinished) {
+                return
+            }
+
+            val result =
                 TimedDeliveryResult(
                     messageId =
                         packet.messageId,
@@ -278,9 +280,27 @@ class TimedNetworkSimulator(
                         packet.createdAt,
                     deliveredAt =
                         completionTime,
-                    delivered = true,
-                    dropped = false
+                    droppedAt =
+                        null,
+                    delivered =
+                        true,
+                    dropped =
+                        false,
+                    dropReason =
+                        null
                 )
+
+            results.add(
+                result
+            )
+
+            /*
+             * Research evidence:
+             * exactly one terminal PacketRecord.
+             */
+            recordPacketOutcome(
+                packetState = packetState,
+                result = result
             )
 
             clearRoutingState(
@@ -307,8 +327,8 @@ class TimedNetworkSimulator(
         }
 
         /*
-         * First check whether this packet is using
-         * dynamic routing.
+         * Dynamic packets request a fresh route
+         * from their current node.
          */
         val dynamicProvider =
             dynamicRouteProviders[
@@ -330,15 +350,15 @@ class TimedNetworkSimulator(
                 resolveFixedNextHop(
                     messageId =
                         packet.messageId,
-                    currentNodeId = nodeId
+                    currentNodeId =
+                        nodeId
                 )
             }
 
         /*
-         * No usable route currently exists.
+         * B0 has no store-carry-forward.
          *
-         * For B0 this is terminal because B0 has no
-         * store-carry-forward behavior.
+         * Therefore no route is terminal.
          */
         if (nextHopId == null) {
 
@@ -370,12 +390,8 @@ class TimedNetworkSimulator(
     ): String? {
 
         /*
-         * IMPORTANT:
-         *
-         * This asks Dijkstra for a NEW route using the
-         * CURRENT graph.
-         *
-         * This is what allows an active packet to reroute.
+         * Fresh Dijkstra decision against
+         * the current topology.
          */
         val path =
             provider.findPath(
@@ -395,10 +411,6 @@ class TimedNetworkSimulator(
             return null
         }
 
-        /*
-         * path[0] = current node
-         * path[1] = fresh next hop
-         */
         return path!![1]
     }
 
@@ -443,7 +455,9 @@ class TimedNetworkSimulator(
                 ?: return null
 
         val currentIndex =
-            path.indexOf(currentNodeId)
+            path.indexOf(
+                currentNodeId
+            )
 
         if (
             currentIndex == -1 ||
@@ -500,7 +514,7 @@ class TimedNetworkSimulator(
             )
 
             /*
-             * Physical hop exhausted its retry budget.
+             * Physical hop exhausted retry budget.
              */
             if (!transmission.success) {
 
@@ -514,9 +528,7 @@ class TimedNetworkSimulator(
             }
 
             /*
-             * Transmission succeeded.
-             *
-             * Check TTL before moving the packet.
+             * TTL check before forwarding.
              */
             if (
                 state.remainingTtl <= 0
@@ -572,12 +584,14 @@ class TimedNetworkSimulator(
     ): PacketState {
 
         return PacketState(
-            packet = packet,
+            packet =
+                packet,
             currentNodeId =
                 packet.sourceId,
             remainingTtl =
                 packet.ttl,
-            hopCount = 0
+            hopCount =
+                0
         )
     }
 
@@ -594,6 +608,11 @@ class TimedNetworkSimulator(
         val messageId =
             packetState.packet.messageId
 
+        /*
+         * Hard invariant:
+         *
+         * a packet can terminate only once.
+         */
         val alreadyFinished =
             results.any {
                 it.messageId ==
@@ -604,7 +623,7 @@ class TimedNetworkSimulator(
             return
         }
 
-        results.add(
+        val result =
             TimedDeliveryResult(
                 messageId =
                     messageId,
@@ -621,10 +640,89 @@ class TimedNetworkSimulator(
                 dropReason =
                     reason
             )
+
+        results.add(
+            result
+        )
+
+        /*
+         * Research evidence:
+         * one terminal row for this packet.
+         */
+        recordPacketOutcome(
+            packetState = packetState,
+            result = result
         )
 
         clearRoutingState(
             messageId
+        )
+    }
+
+
+    // =====================================================
+    // RESEARCH PACKET RECORDING
+    // =====================================================
+
+    private fun recordPacketOutcome(
+        packetState: PacketState,
+        result: TimedDeliveryResult
+    ) {
+
+        /*
+         * Normal app/tests may run with no
+         * research instrumentation.
+         */
+        val activeInstrumentation =
+            instrumentation
+                ?: return
+
+        val activeRunId =
+            runId
+                ?: return
+
+        val packet =
+            packetState.packet
+
+        val failureTerminationTime =
+            if (result.dropped) {
+
+                result.timeUntilTermination()
+
+            } else {
+
+                null
+            }
+
+        activeInstrumentation.onPacketFinished(
+            PacketRecord(
+                runId =
+                    activeRunId,
+                messageId =
+                    packet.messageId,
+                sourceId =
+                    packet.sourceId,
+                destinationId =
+                    packet.destinationId,
+                createdAt =
+                    packet.createdAt,
+                deliveredAt =
+                    result.deliveredAt,
+                droppedAt =
+                    result.droppedAt,
+                delivered =
+                    result.delivered,
+                dropped =
+                    result.dropped,
+                dropReason =
+                    result.dropReason,
+                hopCount =
+                    packetState.hopCount,
+                endToEndLatency =
+                    result.endToEndLatency(),
+                terminationTime =
+                    failureTerminationTime
+            )
         )
     }
 
@@ -658,7 +756,9 @@ class TimedNetworkSimulator(
         nodeId: String
     ): TimedNetworkNode? {
 
-        return nodes[nodeId]
+        return nodes[
+            nodeId
+        ]
     }
 
 

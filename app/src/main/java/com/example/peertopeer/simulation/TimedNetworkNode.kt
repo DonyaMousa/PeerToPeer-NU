@@ -1,12 +1,14 @@
 package com.example.peertopeer.simulation
 
 import com.example.peertopeer.network.PacketState
-
+import com.example.peertopeer.simulation.experiment.instrumentation.ExperimentInstrumentation
 class TimedNetworkNode(
     val nodeId: String,
     queueCapacity: Int,
     serviceTime: Long,
     simulationEngine: SimulationEngine,
+    runId: String? = null,
+    instrumentation: ExperimentInstrumentation? = null,
     onProcessed: (
         nodeId: String,
         packetState: PacketState,
@@ -19,15 +21,18 @@ class TimedNetworkNode(
             nodeId = nodeId,
             queueCapacity = queueCapacity,
             serviceTime = serviceTime,
-            simulationEngine = simulationEngine
-        ) { packetState, completionTime ->
+            simulationEngine = simulationEngine,
+            onPacketProcessed = { packetState, completionTime ->
 
-            onProcessed(
-                nodeId,
-                packetState,
-                completionTime
-            )
-        }
+                onProcessed(
+                    nodeId,
+                    packetState,
+                    completionTime
+                )
+            },
+            runId = runId,
+            instrumentation = instrumentation
+        )
 
     fun receive(
         packetState: PacketState
