@@ -25,7 +25,10 @@ data class LinkConfig(
      * gradual-degradation
      * scheduled-failure
      */
-    val modelName: String = "deterministic"
+    val modelName: String = "deterministic",
+
+    val successProbability: Double? = null
+
 ) {
 
     init {
@@ -40,6 +43,11 @@ data class LinkConfig(
 
         require(modelName.isNotBlank()) {
             "modelName cannot be blank."
+        }
+        successProbability?.let {
+            require(it in 0.0..1.0) {
+                "successProbability must be between 0.0 and 1.0."
+            }
         }
     }
 }

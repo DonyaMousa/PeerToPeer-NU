@@ -170,6 +170,9 @@ class B0AlternateRouteFailureExperimentTest {
         println(
             "Cache invalidations: ${summary.cacheInvalidations}"
         )
+        println(
+            "Route changes: ${summary.routeChanges}"
+        )
 
         println()
 

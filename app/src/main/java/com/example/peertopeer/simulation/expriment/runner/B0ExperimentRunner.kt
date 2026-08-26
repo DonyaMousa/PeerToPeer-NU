@@ -16,11 +16,12 @@ import com.example.peertopeer.simulation.experiment.record.QueueEventRecord
 import com.example.peertopeer.simulation.experiment.record.ResourceSampleRecord
 import com.example.peertopeer.simulation.experiment.record.RoutingEventRecord
 import com.example.peertopeer.simulation.experiment.record.TopologyEventRecord
+import com.example.peertopeer.simulation.experiment.record.TopologyEventType
 import com.example.peertopeer.simulation.experiment.record.TransmissionRecord
 import com.example.peertopeer.simulation.experiment.recording.ExperimentRecorder
 import com.example.peertopeer.simulation.experiment.result.ExperimentAggregator
 import com.example.peertopeer.simulation.experiment.result.RunSummary
-import com.example.peertopeer.simulation.experiment.record.TopologyEventType
+import kotlin.random.Random
 
 class B0ExperimentRunner {
 
@@ -34,6 +35,10 @@ class B0ExperimentRunner {
         val resourceSamples: List<ResourceSampleRecord>
     )
 
+    // =====================================================
+    // E01 — HEALTHY LINE
+    // =====================================================
+
     fun runHealthyLine(
         config: ExperimentConfig
     ): RunOutput {
@@ -45,10 +50,6 @@ class B0ExperimentRunner {
         require(config.scenario.nodeCount >= 2) {
             "Healthy line requires at least 2 nodes."
         }
-
-        // =================================================
-        // 1. SIMULATION + RESEARCH RECORDING
-        // =================================================
 
         val simulationEngine =
             SimulationEngine()
@@ -63,10 +64,6 @@ class B0ExperimentRunner {
                 recorder = recorder
             )
 
-        // =================================================
-        // 2. GRAPH
-        // =================================================
-
         val graph =
             createLineGraph(
                 nodeCount = config.scenario.nodeCount
@@ -80,10 +77,6 @@ class B0ExperimentRunner {
                 config.scenario.nodeCount - 1
             )
 
-        // =================================================
-        // 3. B0 ROUTING
-        // =================================================
-
         val routeProvider =
             B0DynamicRouteProvider(
                 graph = graph,
@@ -94,10 +87,6 @@ class B0ExperimentRunner {
                     simulationEngine.currentTime
                 }
             )
-
-        // =================================================
-        // 4. LINK MODEL
-        // =================================================
 
         val transmitter =
             EventDrivenRetryLinkTransmitter(
@@ -112,11 +101,6 @@ class B0ExperimentRunner {
                             _,
                             _ ->
 
-                        /*
-                         * Healthy B0 reference condition:
-                         *
-                         * every graph edge succeeds.
-                         */
                         graph.containsEdge(
                             fromNodeId,
                             toNodeId
@@ -126,10 +110,6 @@ class B0ExperimentRunner {
                 instrumentation = instrumentation
             )
 
-        // =================================================
-        // 5. NETWORK SIMULATOR
-        // =================================================
-
         val simulator =
             TimedNetworkSimulator(
                 simulationEngine = simulationEngine,
@@ -138,11 +118,6 @@ class B0ExperimentRunner {
                 instrumentation = instrumentation
             )
 
-        /*
-         * Source is injected directly into the network,
-         * so only receiving/forwarding nodes need
-         * TimedNetworkNode instances.
-         */
         for (
         index in 1 until
                 config.scenario.nodeCount
@@ -151,16 +126,14 @@ class B0ExperimentRunner {
             simulator.addNode(
                 nodeId =
                     nodeIdForIndex(index),
+
                 queueCapacity =
                     config.scenario.queueCapacity,
+
                 serviceTime =
                     config.scenario.serviceTime
             )
         }
-
-        // =================================================
-        // 6. TRAFFIC GENERATION
-        // =================================================
 
         repeat(
             config.traffic.packetCount
@@ -178,14 +151,19 @@ class B0ExperimentRunner {
                     Packet(
                         messageId =
                             "${config.runId}-MSG-$packetIndex",
+
                         sourceId =
                             sourceId,
+
                         destinationId =
                             destinationId,
+
                         createdAt =
                             generationTime,
+
                         ttl =
                             config.traffic.packetTtl,
+
                         payload =
                             createPayload(
                                 config.traffic.payloadBytes
@@ -199,97 +177,18 @@ class B0ExperimentRunner {
             }
         }
 
-        // =================================================
-        // 7. EXECUTE RUN
-        // =================================================
-
         simulationEngine.run()
 
-        // =================================================
-        // 8. RAW RECORDS
-        // =================================================
-
-        val packetRecords =
-            recorder.getPacketRecords()
-
-        val transmissionRecords =
-            recorder.getTransmissionRecords()
-
-        val routingEventRecords =
-            recorder.getRoutingEventRecords()
-
-        val topologyEventRecords =
-            recorder.getTopologyEventRecords()
-
-        val queueEventRecords =
-            recorder.getQueueEventRecords()
-
-        val existingResourceSamples =
-            recorder.getResourceSampleRecords()
-
-        require(
-            existingResourceSamples.isEmpty()
-        ) {
-            "B0 runner unexpectedly already contains resource samples."
-        }
-
-        val resourceSampleRecords =
-            buildFinalResourceSamples(
-                config = config,
-                packets = packetRecords,
-                transmissions = transmissionRecords,
-                queueEvents = queueEventRecords,
-                sampleTime =
-                    packetRecords
-                        .mapNotNull {
-                            it.deliveredAt ?: it.droppedAt
-                        }
-                        .maxOrNull()
-                        ?: 0L
-            )
-
-
-        // =================================================
-        // 9. HARD RESEARCH VALIDATION
-        // =================================================
-
-        validatePacketAccounting(
+        return buildRunOutput(
             config = config,
-            packets = packetRecords
-        )
-
-        validateTransmissionAccounting(
-            transmissions =
-                transmissionRecords
-        )
-
-        // =================================================
-        // 10. AGGREGATION
-        // =================================================
-
-        val summary =
-            ExperimentAggregator.aggregate(
-                config = config,
-                packets = packetRecords,
-                transmissions = transmissionRecords,
-                routingEvents = routingEventRecords,
-                topologyEvents = topologyEventRecords,
-                queueEvents = queueEventRecords,
-                resourceSamples = resourceSampleRecords,
-                routingTelemetry = routeProvider.telemetry
-
-            )
-
-        return RunOutput(
-            summary = summary,
-            packets = packetRecords,
-            transmissions = transmissionRecords,
-            routingEvents = routingEventRecords,
-            topologyEvents = topologyEventRecords,
-            queueEvents = queueEventRecords,
-            resourceSamples = resourceSampleRecords
+            recorder = recorder,
+            routeProvider = routeProvider
         )
     }
+
+    // =====================================================
+    // E02 — CONTROLLED RETRY DEGRADATION
+    // =====================================================
 
     fun runControlledRetryDegradation(
         config: ExperimentConfig
@@ -303,10 +202,6 @@ class B0ExperimentRunner {
             "Controlled retry degradation currently requires at least 5 nodes."
         }
 
-        // =================================================
-        // 1. SIMULATION + RECORDING
-        // =================================================
-
         val simulationEngine =
             SimulationEngine()
 
@@ -319,10 +214,6 @@ class B0ExperimentRunner {
             RecorderInstrumentation(
                 recorder = recorder
             )
-
-        // =================================================
-        // 2. GRAPH
-        // =================================================
 
         val graph =
             createLineGraph(
@@ -338,10 +229,6 @@ class B0ExperimentRunner {
                 config.scenario.nodeCount - 1
             )
 
-        // =================================================
-        // 3. B0 ROUTING
-        // =================================================
-
         val routeProvider =
             B0DynamicRouteProvider(
                 graph = graph,
@@ -352,25 +239,6 @@ class B0ExperimentRunner {
                     simulationEngine.currentTime
                 }
             )
-
-        // =================================================
-        // 4. CONTROLLED DEGRADED LINK
-        // =================================================
-
-        /*
-         * Only this link is degraded:
-         *
-         * N2 -> N3
-         *
-         * For every even-numbered packet:
-         *
-         * attempt 1 fails
-         * attempt 2 succeeds
-         *
-         * Odd-numbered packets succeed immediately.
-         *
-         * The topology itself NEVER changes.
-         */
 
         val degradedFrom =
             "N2"
@@ -423,18 +291,17 @@ class B0ExperimentRunner {
                     instrumentation
             )
 
-        // =================================================
-        // 5. NETWORK
-        // =================================================
-
         val simulator =
             TimedNetworkSimulator(
                 simulationEngine =
                     simulationEngine,
+
                 eventDrivenLinkTransmitter =
                     transmitter,
+
                 runId =
                     config.runId,
+
                 instrumentation =
                     instrumentation
             )
@@ -447,16 +314,14 @@ class B0ExperimentRunner {
             simulator.addNode(
                 nodeId =
                     nodeIdForIndex(index),
+
                 queueCapacity =
                     config.scenario.queueCapacity,
+
                 serviceTime =
                     config.scenario.serviceTime
             )
         }
-
-        // =================================================
-        // 6. TRAFFIC
-        // =================================================
 
         repeat(
             config.traffic.packetCount
@@ -474,14 +339,19 @@ class B0ExperimentRunner {
                     Packet(
                         messageId =
                             "${config.runId}-MSG-$packetIndex",
+
                         sourceId =
                             sourceId,
+
                         destinationId =
                             destinationId,
+
                         createdAt =
                             generationTime,
+
                         ttl =
                             config.traffic.packetTtl,
+
                         payload =
                             createPayload(
                                 config.traffic.payloadBytes
@@ -489,120 +359,24 @@ class B0ExperimentRunner {
                     )
 
                 simulator.send(
-                    packet =
-                        packet,
-                    routeProvider =
-                        routeProvider
+                    packet = packet,
+                    routeProvider = routeProvider
                 )
             }
         }
 
-        // =================================================
-        // 7. RUN
-        // =================================================
-
         simulationEngine.run()
 
-        // =================================================
-        // 8. RAW RECORDS
-        // =================================================
-
-        val packetRecords =
-            recorder.getPacketRecords()
-
-        val transmissionRecords =
-            recorder.getTransmissionRecords()
-
-        val routingEventRecords =
-            recorder.getRoutingEventRecords()
-
-        val topologyEventRecords =
-            recorder.getTopologyEventRecords()
-
-        val queueEventRecords =
-            recorder.getQueueEventRecords()
-
-        val existingResourceSamples =
-            recorder.getResourceSampleRecords()
-
-        require(
-            existingResourceSamples.isEmpty()
-        ) {
-            "B0 runner unexpectedly already contains resource samples."
-        }
-
-        val resourceSampleRecords =
-            buildFinalResourceSamples(
-                config = config,
-                packets = packetRecords,
-                transmissions = transmissionRecords,
-                queueEvents = queueEventRecords,
-                sampleTime =
-                    packetRecords
-                        .mapNotNull {
-                            it.deliveredAt ?: it.droppedAt
-                        }
-                        .maxOrNull()
-                        ?: 0L
-            )
-        // =================================================
-        // 9. VALIDATION
-        // =================================================
-
-        validatePacketAccounting(
-            config =
-                config,
-            packets =
-                packetRecords
-        )
-
-        validateTransmissionAccounting(
-            transmissions =
-                transmissionRecords
-        )
-
-        // =================================================
-        // 10. SUMMARY
-        // =================================================
-
-        val summary =
-            ExperimentAggregator.aggregate(
-                config =
-                    config,
-                packets =
-                    packetRecords,
-                transmissions =
-                    transmissionRecords,
-                routingEvents =
-                    routingEventRecords,
-                topologyEvents =
-                    topologyEventRecords,
-                queueEvents =
-                    queueEventRecords,
-                resourceSamples =
-                    resourceSampleRecords,
-                routingTelemetry =
-                    routeProvider.telemetry
-            )
-
-        return RunOutput(
-            summary =
-                summary,
-            packets =
-                packetRecords,
-            transmissions =
-                transmissionRecords,
-            routingEvents =
-                routingEventRecords,
-            topologyEvents =
-                topologyEventRecords,
-            queueEvents =
-                queueEventRecords,
-            resourceSamples =
-                resourceSampleRecords
+        return buildRunOutput(
+            config = config,
+            recorder = recorder,
+            routeProvider = routeProvider
         )
     }
 
+    // =====================================================
+    // E03 — CONTROLLED CONGESTION
+    // =====================================================
 
     fun runControlledCongestion(
         config: ExperimentConfig
@@ -616,10 +390,6 @@ class B0ExperimentRunner {
             "Controlled congestion requires at least 2 nodes."
         }
 
-        // =================================================
-        // 1. SIMULATION + RECORDING
-        // =================================================
-
         val simulationEngine =
             SimulationEngine()
 
@@ -632,10 +402,6 @@ class B0ExperimentRunner {
             RecorderInstrumentation(
                 recorder = recorder
             )
-
-        // =================================================
-        // 2. STATIC LINE GRAPH
-        // =================================================
 
         val graph =
             createLineGraph(
@@ -651,10 +417,6 @@ class B0ExperimentRunner {
                 config.scenario.nodeCount - 1
             )
 
-        // =================================================
-        // 3. B0 ROUTING
-        // =================================================
-
         val routeProvider =
             B0DynamicRouteProvider(
                 graph = graph,
@@ -665,10 +427,6 @@ class B0ExperimentRunner {
                     simulationEngine.currentTime
                 }
             )
-
-        // =================================================
-        // 4. PERFECTLY HEALTHY LINKS
-        // =================================================
 
         val transmitter =
             EventDrivenRetryLinkTransmitter(
@@ -702,27 +460,21 @@ class B0ExperimentRunner {
                     instrumentation
             )
 
-        // =================================================
-        // 5. NETWORK
-        // =================================================
-
         val simulator =
             TimedNetworkSimulator(
                 simulationEngine =
                     simulationEngine,
+
                 eventDrivenLinkTransmitter =
                     transmitter,
+
                 runId =
                     config.runId,
+
                 instrumentation =
                     instrumentation
             )
 
-        /*
-         * Source N0 sends directly into the network.
-         *
-         * All downstream nodes have bounded queues.
-         */
         for (
         index in 1 until
                 config.scenario.nodeCount
@@ -731,16 +483,14 @@ class B0ExperimentRunner {
             simulator.addNode(
                 nodeId =
                     nodeIdForIndex(index),
+
                 queueCapacity =
                     config.scenario.queueCapacity,
+
                 serviceTime =
                     config.scenario.serviceTime
             )
         }
-
-        // =================================================
-        // 6. HIGH-LOAD TRAFFIC
-        // =================================================
 
         repeat(
             config.traffic.packetCount
@@ -758,14 +508,19 @@ class B0ExperimentRunner {
                     Packet(
                         messageId =
                             "${config.runId}-MSG-$packetIndex",
+
                         sourceId =
                             sourceId,
+
                         destinationId =
                             destinationId,
+
                         createdAt =
                             generationTime,
+
                         ttl =
                             config.traffic.packetTtl,
+
                         payload =
                             createPayload(
                                 config.traffic.payloadBytes
@@ -773,102 +528,24 @@ class B0ExperimentRunner {
                     )
 
                 simulator.send(
-                    packet =
-                        packet,
-                    routeProvider =
-                        routeProvider
+                    packet = packet,
+                    routeProvider = routeProvider
                 )
             }
         }
 
-        // =================================================
-        // 7. RUN
-        // =================================================
-
         simulationEngine.run()
 
-        // =================================================
-        // 8. RAW RECORDS
-        // =================================================
-
-        val packetRecords =
-            recorder.getPacketRecords()
-
-        val transmissionRecords =
-            recorder.getTransmissionRecords()
-
-        val routingEventRecords =
-            recorder.getRoutingEventRecords()
-
-        val topologyEventRecords =
-            recorder.getTopologyEventRecords()
-
-        val queueEventRecords =
-            recorder.getQueueEventRecords()
-
-        val resourceSampleRecords =
-            recorder.getResourceSampleRecords()
-
-        // =================================================
-        // 9. VALIDATE ACCOUNTING
-        // =================================================
-
-        validatePacketAccounting(
-            config =
-                config,
-            packets =
-                packetRecords
-        )
-
-        validateTransmissionAccounting(
-            transmissions =
-                transmissionRecords
-        )
-
-        // =================================================
-        // 10. AGGREGATE
-        // =================================================
-
-        val summary =
-            ExperimentAggregator.aggregate(
-                config =
-                    config,
-                packets =
-                    packetRecords,
-                transmissions =
-                    transmissionRecords,
-                routingEvents =
-                    routingEventRecords,
-                topologyEvents =
-                    topologyEventRecords,
-                queueEvents =
-                    queueEventRecords,
-                resourceSamples =
-                    resourceSampleRecords,
-                routingTelemetry =
-                    routeProvider.telemetry
-            )
-
-        return RunOutput(
-            summary =
-                summary,
-            packets =
-                packetRecords,
-            transmissions =
-                transmissionRecords,
-            routingEvents =
-                routingEventRecords,
-            topologyEvents =
-                topologyEventRecords,
-            queueEvents =
-                queueEventRecords,
-            resourceSamples =
-                resourceSampleRecords
+        return buildRunOutput(
+            config = config,
+            recorder = recorder,
+            routeProvider = routeProvider
         )
     }
+
     // =====================================================
-// E04 — ALTERNATE-ROUTE FAILURE
-// =====================================================
+    // E04 — ALTERNATE-ROUTE FAILURE
+    // =====================================================
 
     fun runAlternateRouteFailure(
         config: ExperimentConfig
@@ -894,22 +571,6 @@ class B0ExperimentRunner {
             RecorderInstrumentation(
                 recorder = recorder
             )
-
-        // -------------------------------------------------
-        // Topology
-        //
-        //       N2
-        //      /  \
-        // N0--N1   N4
-        //      \  /
-        //       N3
-        //
-        // Initial preferred route:
-        // N0 -> N1 -> N2 -> N4
-        //
-        // Backup:
-        // N0 -> N1 -> N3 -> N4
-        // -------------------------------------------------
 
         val graph =
             Graph()
@@ -1029,13 +690,6 @@ class B0ExperimentRunner {
             )
         }
 
-        /*
-         * Deliberately chosen between packets for the
-         * standard interval=10 configuration.
-         *
-         * This isolates rerouting from an in-flight
-         * transmission failure.
-         */
         val failureTime =
             27L
 
@@ -1118,10 +772,9 @@ class B0ExperimentRunner {
         )
     }
 
-
-// =====================================================
-// E05 — PARTITION + RECOVERY
-// =====================================================
+    // =====================================================
+    // E05 — PARTITION + RECOVERY
+    // =====================================================
 
     fun runPartitionRecovery(
         config: ExperimentConfig
@@ -1147,13 +800,6 @@ class B0ExperimentRunner {
             RecorderInstrumentation(
                 recorder = recorder
             )
-
-        // -------------------------------------------------
-        // N0 -- N1 -- N2 -- N3
-        //
-        // N2-N3 disappears at t=20.
-        // It returns at t=50.
-        // -------------------------------------------------
 
         val graph =
             createLineGraph(
@@ -1340,10 +986,9 @@ class B0ExperimentRunner {
         )
     }
 
-
-// =====================================================
-// E06 — COMBINED STRESS
-// =====================================================
+    // =====================================================
+    // E06 — COMBINED STRESS
+    // =====================================================
 
     fun runCombinedStress(
         config: ExperimentConfig
@@ -1369,19 +1014,6 @@ class B0ExperimentRunner {
             RecorderInstrumentation(
                 recorder = recorder
             )
-
-        // -------------------------------------------------
-        // Same dual-path topology as E04.
-        //
-        // Stress mechanisms:
-        //
-        // 1. High offered load
-        // 2. Controlled retries on N1 -> N2
-        // 3. N2 -> N4 topology failure
-        //
-        // After failure the alternate N1 -> N3 -> N4
-        // route remains available.
-        // -------------------------------------------------
 
         val graph =
             Graph()
@@ -1459,10 +1091,6 @@ class B0ExperimentRunner {
                             attemptNumber,
                             _ ->
 
-                        /*
-                         * A physically absent graph edge
-                         * cannot succeed.
-                         */
                         if (
                             !graph.containsEdge(
                                 fromNodeId,
@@ -1479,13 +1107,6 @@ class B0ExperimentRunner {
                                     messageId
                                 )
 
-                            /*
-                             * Before rerouting, N1->N2 is
-                             * deliberately degraded.
-                             *
-                             * Even-index packets fail on
-                             * their first attempt only.
-                             */
                             val degradedLink =
                                 fromNodeId == "N1" &&
                                         toNodeId == "N2"
@@ -1617,9 +1238,1282 @@ class B0ExperimentRunner {
         )
     }
 
+    // =====================================================
+    // S01 — SEEDED STOCHASTIC RETRY
+    // =====================================================
+
+    fun runSeededRetryScenario(
+        config: ExperimentConfig
+    ): RunOutput {
+
+        require(config.protocol == "B0") {
+            "B0ExperimentRunner only runs protocol B0."
+        }
+
+        require(config.scenario.nodeCount >= 2) {
+            "Seeded retry scenario requires at least 2 nodes."
+        }
+
+        /*
+         * SINGLE SOURCE OF TRUTH:
+         *
+         * The simulation uses the exact probability stored
+         * inside ExperimentConfig.
+         */
+        val successProbability =
+            requireNotNull(
+                config.link.successProbability
+            ) {
+                "S01 requires link.successProbability."
+            }
+
+        require(successProbability in 0.0..1.0) {
+            "successProbability must be between 0.0 and 1.0."
+        }
+
+        val simulationEngine =
+            SimulationEngine()
+
+        val recorder =
+            ExperimentRecorder(
+                runId = config.runId
+            )
+
+        val instrumentation =
+            RecorderInstrumentation(
+                recorder = recorder
+            )
+
+        val graph =
+            createLineGraph(
+                nodeCount =
+                    config.scenario.nodeCount
+            )
+
+        val sourceId =
+            nodeIdForIndex(0)
+
+        val destinationId =
+            nodeIdForIndex(
+                config.scenario.nodeCount - 1
+            )
+
+        val routeProvider =
+            B0DynamicRouteProvider(
+                graph = graph,
+                routingEngine = DijkstraEngine(),
+                runId = config.runId,
+                instrumentation = instrumentation,
+                timeProvider = {
+                    simulationEngine.currentTime
+                }
+            )
+
+        /*
+         * Every stochastic decision for the run comes
+         * from the configured seed.
+         */
+        val random =
+            Random(
+                config.seed
+            )
+
+        val transmitter =
+            EventDrivenRetryLinkTransmitter(
+                simulationEngine =
+                    simulationEngine,
+
+                maxAttempts =
+                    config.link.maxAttempts,
+
+                delayPerAttempt =
+                    config.link.retryDelay,
+
+                attemptPolicy =
+                    TimedLinkAttemptPolicy {
+                            fromNodeId,
+                            toNodeId,
+                            _,
+                            _,
+                            _ ->
+
+                        if (
+                            !graph.containsEdge(
+                                fromNodeId,
+                                toNodeId
+                            )
+                        ) {
+
+                            false
+
+                        } else {
+
+                            random.nextDouble() <
+                                    successProbability
+                        }
+                    },
+
+                runId =
+                    config.runId,
+
+                instrumentation =
+                    instrumentation
+            )
+
+        val simulator =
+            TimedNetworkSimulator(
+                simulationEngine =
+                    simulationEngine,
+
+                eventDrivenLinkTransmitter =
+                    transmitter,
+
+                runId =
+                    config.runId,
+
+                instrumentation =
+                    instrumentation
+            )
+
+        for (
+        index in 1 until
+                config.scenario.nodeCount
+        ) {
+
+            simulator.addNode(
+                nodeId =
+                    nodeIdForIndex(index),
+
+                queueCapacity =
+                    config.scenario.queueCapacity,
+
+                serviceTime =
+                    config.scenario.serviceTime
+            )
+        }
+
+        repeat(
+            config.traffic.packetCount
+        ) { packetIndex ->
+
+            val generationTime =
+                packetIndex.toLong() *
+                        config.traffic.packetInterval
+
+            simulationEngine.schedule(
+                generationTime
+            ) {
+
+                val packet =
+                    Packet(
+                        messageId =
+                            "${config.runId}-MSG-$packetIndex",
+
+                        sourceId =
+                            sourceId,
+
+                        destinationId =
+                            destinationId,
+
+                        createdAt =
+                            generationTime,
+
+                        ttl =
+                            config.traffic.packetTtl,
+
+                        payload =
+                            createPayload(
+                                config.traffic.payloadBytes
+                            )
+                    )
+
+                simulator.send(
+                    packet = packet,
+                    routeProvider = routeProvider
+                )
+            }
+        }
+
+        simulationEngine.run()
+
+        return buildRunOutput(
+            config = config,
+            recorder = recorder,
+            routeProvider = routeProvider
+        )
+    }
 
     // =====================================================
-    // TOPOLOGY
+    // S02 — SEEDED STOCHASTIC TOPOLOGY
+    // =====================================================
+
+    fun runSeededTopologyScenario(
+        config: ExperimentConfig
+    ): RunOutput {
+
+        require(config.protocol == "B0") {
+            "B0ExperimentRunner only runs protocol B0."
+        }
+
+        require(config.scenario.nodeCount == 5) {
+            "Seeded topology scenario requires exactly 5 nodes."
+        }
+
+        /*
+         * SINGLE SOURCE OF TRUTH:
+         *
+         * These values come directly from ScenarioConfig.
+         */
+        val failureProbability =
+            requireNotNull(
+                config.scenario.topologyFailureProbability
+            ) {
+                "S02 requires scenario.topologyFailureProbability."
+            }
+
+        require(failureProbability in 0.0..1.0) {
+            "topologyFailureProbability must be between 0.0 and 1.0."
+        }
+
+        val topologyDecisionTimes =
+            config.scenario.topologyDecisionTimes
+
+        require(topologyDecisionTimes.isNotEmpty()) {
+            "S02 requires topologyDecisionTimes."
+        }
+
+        require(
+            topologyDecisionTimes.all {
+                it >= 0L
+            }
+        ) {
+            "topologyDecisionTimes cannot contain negative values."
+        }
+
+        val simulationEngine =
+            SimulationEngine()
+
+        val recorder =
+            ExperimentRecorder(
+                runId = config.runId
+            )
+
+        val instrumentation =
+            RecorderInstrumentation(
+                recorder = recorder
+            )
+
+        /*
+         *       N2
+         *      /  \
+         * N0--N1   N4
+         *      \  /
+         *       N3
+         */
+        val graph =
+            Graph()
+
+        repeat(5) { index ->
+
+            val id =
+                nodeIdForIndex(index)
+
+            graph.addNode(
+                Node(
+                    nodeId = id,
+                    displayName = id
+                )
+            )
+        }
+
+        graph.addEdge(
+            "N0",
+            "N1",
+            1
+        )
+
+        graph.addEdge(
+            "N1",
+            "N2",
+            1
+        )
+
+        graph.addEdge(
+            "N2",
+            "N4",
+            1
+        )
+
+        graph.addEdge(
+            "N1",
+            "N3",
+            1
+        )
+
+        graph.addEdge(
+            "N3",
+            "N4",
+            1
+        )
+
+        val routeProvider =
+            B0DynamicRouteProvider(
+                graph = graph,
+                routingEngine = DijkstraEngine(),
+                runId = config.runId,
+                instrumentation = instrumentation,
+                timeProvider = {
+                    simulationEngine.currentTime
+                }
+            )
+
+        val transmitter =
+            EventDrivenRetryLinkTransmitter(
+                simulationEngine =
+                    simulationEngine,
+
+                maxAttempts =
+                    config.link.maxAttempts,
+
+                delayPerAttempt =
+                    config.link.retryDelay,
+
+                attemptPolicy =
+                    TimedLinkAttemptPolicy {
+                            fromNodeId,
+                            toNodeId,
+                            _,
+                            _,
+                            _ ->
+
+                        graph.containsEdge(
+                            fromNodeId,
+                            toNodeId
+                        )
+                    },
+
+                runId =
+                    config.runId,
+
+                instrumentation =
+                    instrumentation
+            )
+
+        val simulator =
+            TimedNetworkSimulator(
+                simulationEngine =
+                    simulationEngine,
+
+                eventDrivenLinkTransmitter =
+                    transmitter,
+
+                runId =
+                    config.runId,
+
+                instrumentation =
+                    instrumentation
+            )
+
+        for (index in 1..4) {
+
+            simulator.addNode(
+                nodeId =
+                    nodeIdForIndex(index),
+
+                queueCapacity =
+                    config.scenario.queueCapacity,
+
+                serviceTime =
+                    config.scenario.serviceTime
+            )
+        }
+
+        val random =
+            Random(
+                config.seed
+            )
+
+        /*
+         * IMPORTANT:
+         *
+         * No hardcoded topology schedule here anymore.
+         *
+         * The schedule comes directly from:
+         *
+         * config.scenario.topologyDecisionTimes
+         */
+        topologyDecisionTimes.forEach { eventTime ->
+
+            simulationEngine.schedule(
+                eventTime
+            ) {
+
+                val shouldFail =
+                    random.nextDouble() <
+                            failureProbability
+
+                val currentlyUp =
+                    graph.containsEdge(
+                        "N2",
+                        "N4"
+                    )
+
+                if (
+                    shouldFail &&
+                    currentlyUp
+                ) {
+
+                    val oldWeight =
+                        graph.edgeCost(
+                            "N2",
+                            "N4"
+                        )
+
+                    graph.removeEdge(
+                        "N2",
+                        "N4"
+                    )
+
+                    instrumentation.onTopologyEvent(
+                        TopologyEventRecord(
+                            runId =
+                                config.runId,
+
+                            eventTime =
+                                eventTime,
+
+                            fromNodeId =
+                                "N2",
+
+                            toNodeId =
+                                "N4",
+
+                            eventType =
+                                TopologyEventType.LINK_DOWN,
+
+                            oldWeight =
+                                oldWeight,
+
+                            newWeight =
+                                null
+                        )
+                    )
+
+                } else if (
+                    !shouldFail &&
+                    !currentlyUp
+                ) {
+
+                    graph.addEdge(
+                        from =
+                            "N2",
+
+                        to =
+                            "N4",
+
+                        weight =
+                            1
+                    )
+
+                    instrumentation.onTopologyEvent(
+                        TopologyEventRecord(
+                            runId =
+                                config.runId,
+
+                            eventTime =
+                                eventTime,
+
+                            fromNodeId =
+                                "N2",
+
+                            toNodeId =
+                                "N4",
+
+                            eventType =
+                                TopologyEventType.LINK_UP,
+
+                            oldWeight =
+                                null,
+
+                            newWeight =
+                                1
+                        )
+                    )
+                }
+            }
+        }
+
+        repeat(
+            config.traffic.packetCount
+        ) { packetIndex ->
+
+            val generationTime =
+                packetIndex.toLong() *
+                        config.traffic.packetInterval
+
+            simulationEngine.schedule(
+                generationTime
+            ) {
+
+                val packet =
+                    Packet(
+                        messageId =
+                            "${config.runId}-MSG-$packetIndex",
+
+                        sourceId =
+                            "N0",
+
+                        destinationId =
+                            "N4",
+
+                        createdAt =
+                            generationTime,
+
+                        ttl =
+                            config.traffic.packetTtl,
+
+                        payload =
+                            createPayload(
+                                config.traffic.payloadBytes
+                            )
+                    )
+
+                simulator.send(
+                    packet = packet,
+                    routeProvider = routeProvider
+                )
+            }
+        }
+
+        simulationEngine.run()
+
+        return buildRunOutput(
+            config = config,
+            recorder = recorder,
+            routeProvider = routeProvider
+        )
+    }
+    fun runSeededCongestionScenario(
+        config: ExperimentConfig
+    ): RunOutput {
+
+        require(config.protocol == "B0") {
+            "B0ExperimentRunner only runs protocol B0."
+        }
+
+        require(config.scenario.nodeCount >= 2)
+
+        requireNotNull(
+            config.traffic.burstProbability
+        ) {
+            "S03 requires burstProbability."
+        }
+
+        requireNotNull(
+            config.traffic.burstSize
+        ) {
+            "S03 requires burstSize."
+        }
+
+        requireNotNull(
+            config.traffic.burstSpacing
+        ) {
+            "S03 requires burstSpacing."
+        }
+
+        val simulationEngine =
+            SimulationEngine()
+
+        val recorder =
+            ExperimentRecorder(
+                runId = config.runId
+            )
+
+        val instrumentation =
+            RecorderInstrumentation(
+                recorder = recorder
+            )
+
+        val graph =
+            createLineGraph(
+                config.scenario.nodeCount
+            )
+
+        val sourceId =
+            "N0"
+
+        val destinationId =
+            nodeIdForIndex(
+                config.scenario.nodeCount - 1
+            )
+
+        val routeProvider =
+            B0DynamicRouteProvider(
+                graph = graph,
+                routingEngine = DijkstraEngine(),
+                runId = config.runId,
+                instrumentation = instrumentation,
+                timeProvider = {
+                    simulationEngine.currentTime
+                }
+            )
+
+        /*
+         * S03 intentionally uses perfect links.
+         */
+        val transmitter =
+            EventDrivenRetryLinkTransmitter(
+                simulationEngine =
+                    simulationEngine,
+
+                maxAttempts =
+                    config.link.maxAttempts,
+
+                delayPerAttempt =
+                    config.link.retryDelay,
+
+                attemptPolicy =
+                    TimedLinkAttemptPolicy {
+                            from,
+                            to,
+                            _,
+                            _,
+                            _ ->
+
+                        graph.containsEdge(
+                            from,
+                            to
+                        )
+                    },
+
+                runId =
+                    config.runId,
+
+                instrumentation =
+                    instrumentation
+            )
+
+        val simulator =
+            TimedNetworkSimulator(
+                simulationEngine =
+                    simulationEngine,
+
+                eventDrivenLinkTransmitter =
+                    transmitter,
+
+                runId =
+                    config.runId,
+
+                instrumentation =
+                    instrumentation
+            )
+
+        for (
+        index in 1 until
+                config.scenario.nodeCount
+        ) {
+
+            simulator.addNode(
+                nodeId =
+                    nodeIdForIndex(index),
+
+                queueCapacity =
+                    config.scenario.queueCapacity,
+
+                serviceTime =
+                    config.scenario.serviceTime
+            )
+        }
+
+        val trafficRandom =
+            Random(
+                config.seed + 3_000_000L
+            )
+
+        scheduleSeededTraffic(
+            config = config,
+            simulationEngine = simulationEngine,
+            random = trafficRandom
+        ) { packetIndex, generationTime ->
+
+            simulator.send(
+                packet =
+                    Packet(
+                        messageId =
+                            "${config.runId}-MSG-$packetIndex",
+
+                        sourceId =
+                            sourceId,
+
+                        destinationId =
+                            destinationId,
+
+                        createdAt =
+                            generationTime,
+
+                        ttl =
+                            config.traffic.packetTtl,
+
+                        payload =
+                            createPayload(
+                                config.traffic.payloadBytes
+                            )
+                    ),
+
+                routeProvider =
+                    routeProvider
+            )
+        }
+
+        simulationEngine.run()
+
+        return buildRunOutput(
+            config = config,
+            recorder = recorder,
+            routeProvider = routeProvider
+        )
+    }
+    fun runSeededReliabilityTopologyScenario(
+        config: ExperimentConfig
+    ): RunOutput {
+
+        require(config.protocol == "B0")
+
+        require(config.scenario.nodeCount == 5) {
+            "S04 requires exactly 5 nodes."
+        }
+
+        val successProbability =
+            requireNotNull(
+                config.link.successProbability
+            ) {
+                "S04 requires link.successProbability."
+            }
+
+        val failureProbability =
+            requireNotNull(
+                config.scenario.topologyFailureProbability
+            ) {
+                "S04 requires topologyFailureProbability."
+            }
+
+        val topologyDecisionTimes =
+            config.scenario.topologyDecisionTimes
+
+        require(
+            topologyDecisionTimes.isNotEmpty()
+        )
+
+        val simulationEngine =
+            SimulationEngine()
+
+        val recorder =
+            ExperimentRecorder(
+                config.runId
+            )
+
+        val instrumentation =
+            RecorderInstrumentation(
+                recorder
+            )
+
+        val graph =
+            Graph()
+
+        repeat(5) { index ->
+
+            val id =
+                nodeIdForIndex(index)
+
+            graph.addNode(
+                Node(
+                    id,
+                    id
+                )
+            )
+        }
+
+        /*
+         * Dual-path topology.
+         */
+        graph.addEdge("N0", "N1", 1)
+
+        graph.addEdge("N1", "N2", 1)
+        graph.addEdge("N2", "N4", 1)
+
+        graph.addEdge("N1", "N3", 1)
+        graph.addEdge("N3", "N4", 1)
+
+        val routeProvider =
+            B0DynamicRouteProvider(
+                graph = graph,
+                routingEngine = DijkstraEngine(),
+                runId = config.runId,
+                instrumentation = instrumentation,
+                timeProvider = {
+                    simulationEngine.currentTime
+                }
+            )
+
+        /*
+         * Independent random stream for physical-link
+         * attempt success.
+         */
+        val linkRandom =
+            Random(
+                config.seed + 4_000_000L
+            )
+
+        val transmitter =
+            EventDrivenRetryLinkTransmitter(
+                simulationEngine =
+                    simulationEngine,
+
+                maxAttempts =
+                    config.link.maxAttempts,
+
+                delayPerAttempt =
+                    config.link.retryDelay,
+
+                attemptPolicy =
+                    TimedLinkAttemptPolicy {
+                            from,
+                            to,
+                            _,
+                            _,
+                            _ ->
+
+                        graph.containsEdge(
+                            from,
+                            to
+                        ) &&
+                                linkRandom.nextDouble() <
+                                successProbability
+                    },
+
+                runId =
+                    config.runId,
+
+                instrumentation =
+                    instrumentation
+            )
+
+        val simulator =
+            TimedNetworkSimulator(
+                simulationEngine =
+                    simulationEngine,
+
+                eventDrivenLinkTransmitter =
+                    transmitter,
+
+                runId =
+                    config.runId,
+
+                instrumentation =
+                    instrumentation
+            )
+
+        for (index in 1..4) {
+
+            simulator.addNode(
+                nodeId = "N$index",
+                queueCapacity =
+                    config.scenario.queueCapacity,
+                serviceTime =
+                    config.scenario.serviceTime
+            )
+        }
+
+        /*
+         * Independent topology RNG.
+         */
+        val topologyRandom =
+            Random(
+                config.seed + 4_100_000L
+            )
+
+        topologyDecisionTimes.forEach { eventTime ->
+
+            simulationEngine.schedule(
+                eventTime
+            ) {
+
+                val shouldFail =
+                    topologyRandom.nextDouble() <
+                            failureProbability
+
+                val currentlyUp =
+                    graph.containsEdge(
+                        "N2",
+                        "N4"
+                    )
+
+                if (
+                    shouldFail &&
+                    currentlyUp
+                ) {
+
+                    val oldWeight =
+                        graph.edgeCost(
+                            "N2",
+                            "N4"
+                        )
+
+                    graph.removeEdge(
+                        "N2",
+                        "N4"
+                    )
+
+                    instrumentation.onTopologyEvent(
+                        TopologyEventRecord(
+                            config.runId,
+                            eventTime,
+                            "N2",
+                            "N4",
+                            TopologyEventType.LINK_DOWN,
+                            oldWeight,
+                            null
+                        )
+                    )
+
+                } else if (
+                    !shouldFail &&
+                    !currentlyUp
+                ) {
+
+                    graph.addEdge(
+                        "N2",
+                        "N4",
+                        1
+                    )
+
+                    instrumentation.onTopologyEvent(
+                        TopologyEventRecord(
+                            config.runId,
+                            eventTime,
+                            "N2",
+                            "N4",
+                            TopologyEventType.LINK_UP,
+                            null,
+                            1
+                        )
+                    )
+                }
+            }
+        }
+
+        repeat(
+            config.traffic.packetCount
+        ) { packetIndex ->
+
+            val generationTime =
+                packetIndex.toLong() *
+                        config.traffic.packetInterval
+
+            simulationEngine.schedule(
+                generationTime
+            ) {
+
+                simulator.send(
+                    packet =
+                        Packet(
+                            messageId =
+                                "${config.runId}-MSG-$packetIndex",
+                            sourceId =
+                                "N0",
+                            destinationId =
+                                "N4",
+                            createdAt =
+                                generationTime,
+                            ttl =
+                                config.traffic.packetTtl,
+                            payload =
+                                createPayload(
+                                    config.traffic.payloadBytes
+                                )
+                        ),
+                    routeProvider =
+                        routeProvider
+                )
+            }
+        }
+
+        simulationEngine.run()
+
+        return buildRunOutput(
+            config = config,
+            recorder = recorder,
+            routeProvider = routeProvider
+        )
+    }
+    fun runSeededCombinedScenario(
+        config: ExperimentConfig
+    ): RunOutput {
+
+        require(config.protocol == "B0")
+
+        require(config.scenario.nodeCount == 5) {
+            "S05 requires exactly 5 nodes."
+        }
+
+        val successProbability =
+            requireNotNull(
+                config.link.successProbability
+            )
+
+        val failureProbability =
+            requireNotNull(
+                config.scenario.topologyFailureProbability
+            )
+
+        val topologyDecisionTimes =
+            config.scenario.topologyDecisionTimes
+
+        require(
+            topologyDecisionTimes.isNotEmpty()
+        )
+
+        requireNotNull(
+            config.traffic.burstProbability
+        )
+
+        val simulationEngine =
+            SimulationEngine()
+
+        val recorder =
+            ExperimentRecorder(
+                config.runId
+            )
+
+        val instrumentation =
+            RecorderInstrumentation(
+                recorder
+            )
+
+        val graph =
+            Graph()
+
+        repeat(5) { index ->
+
+            val id =
+                nodeIdForIndex(index)
+
+            graph.addNode(
+                Node(
+                    id,
+                    id
+                )
+            )
+        }
+
+        graph.addEdge("N0", "N1", 1)
+
+        graph.addEdge("N1", "N2", 1)
+        graph.addEdge("N2", "N4", 1)
+
+        graph.addEdge("N1", "N3", 1)
+        graph.addEdge("N3", "N4", 1)
+
+        val routeProvider =
+            B0DynamicRouteProvider(
+                graph = graph,
+                routingEngine = DijkstraEngine(),
+                runId = config.runId,
+                instrumentation = instrumentation,
+                timeProvider = {
+                    simulationEngine.currentTime
+                }
+            )
+
+        /*
+         * Separate stochastic streams keep topology,
+         * link reliability and traffic independent.
+         */
+        val linkRandom =
+            Random(
+                config.seed + 5_000_000L
+            )
+
+        val topologyRandom =
+            Random(
+                config.seed + 5_100_000L
+            )
+
+        val trafficRandom =
+            Random(
+                config.seed + 5_200_000L
+            )
+
+        val transmitter =
+            EventDrivenRetryLinkTransmitter(
+                simulationEngine =
+                    simulationEngine,
+
+                maxAttempts =
+                    config.link.maxAttempts,
+
+                delayPerAttempt =
+                    config.link.retryDelay,
+
+                attemptPolicy =
+                    TimedLinkAttemptPolicy {
+                            from,
+                            to,
+                            _,
+                            _,
+                            _ ->
+
+                        graph.containsEdge(
+                            from,
+                            to
+                        ) &&
+                                linkRandom.nextDouble() <
+                                successProbability
+                    },
+
+                runId =
+                    config.runId,
+
+                instrumentation =
+                    instrumentation
+            )
+
+        val simulator =
+            TimedNetworkSimulator(
+                simulationEngine =
+                    simulationEngine,
+
+                eventDrivenLinkTransmitter =
+                    transmitter,
+
+                runId =
+                    config.runId,
+
+                instrumentation =
+                    instrumentation
+            )
+
+        for (index in 1..4) {
+
+            simulator.addNode(
+                nodeId = "N$index",
+                queueCapacity =
+                    config.scenario.queueCapacity,
+                serviceTime =
+                    config.scenario.serviceTime
+            )
+        }
+
+        topologyDecisionTimes.forEach { eventTime ->
+
+            simulationEngine.schedule(
+                eventTime
+            ) {
+
+                val shouldFail =
+                    topologyRandom.nextDouble() <
+                            failureProbability
+
+                val currentlyUp =
+                    graph.containsEdge(
+                        "N2",
+                        "N4"
+                    )
+
+                if (
+                    shouldFail &&
+                    currentlyUp
+                ) {
+
+                    val oldWeight =
+                        graph.edgeCost(
+                            "N2",
+                            "N4"
+                        )
+
+                    graph.removeEdge(
+                        "N2",
+                        "N4"
+                    )
+
+                    instrumentation.onTopologyEvent(
+                        TopologyEventRecord(
+                            config.runId,
+                            eventTime,
+                            "N2",
+                            "N4",
+                            TopologyEventType.LINK_DOWN,
+                            oldWeight,
+                            null
+                        )
+                    )
+
+                } else if (
+                    !shouldFail &&
+                    !currentlyUp
+                ) {
+
+                    graph.addEdge(
+                        "N2",
+                        "N4",
+                        1
+                    )
+
+                    instrumentation.onTopologyEvent(
+                        TopologyEventRecord(
+                            config.runId,
+                            eventTime,
+                            "N2",
+                            "N4",
+                            TopologyEventType.LINK_UP,
+                            null,
+                            1
+                        )
+                    )
+                }
+            }
+        }
+
+        scheduleSeededTraffic(
+            config = config,
+            simulationEngine = simulationEngine,
+            random = trafficRandom
+        ) { packetIndex, generationTime ->
+
+            simulator.send(
+                packet =
+                    Packet(
+                        messageId =
+                            "${config.runId}-MSG-$packetIndex",
+                        sourceId =
+                            "N0",
+                        destinationId =
+                            "N4",
+                        createdAt =
+                            generationTime,
+                        ttl =
+                            config.traffic.packetTtl,
+                        payload =
+                            createPayload(
+                                config.traffic.payloadBytes
+                            )
+                    ),
+                routeProvider =
+                    routeProvider
+            )
+        }
+
+        simulationEngine.run()
+
+        return buildRunOutput(
+            config = config,
+            recorder = recorder,
+            routeProvider = routeProvider
+        )
+    }
+
+    // =====================================================
+    // TOPOLOGY HELPERS
     // =====================================================
 
     private fun createLineGraph(
@@ -1650,8 +2544,10 @@ class B0ExperimentRunner {
             graph.addEdge(
                 from =
                     nodeIdForIndex(index),
+
                 to =
                     nodeIdForIndex(index + 1),
+
                 weight =
                     1
             )
@@ -1660,25 +2556,12 @@ class B0ExperimentRunner {
         return graph
     }
 
-
-    /*
-     * Gives readable IDs:
-     *
-     * N0
-     * N1
-     * N2
-     * ...
-     *
-     * Better for scalable experiments than relying
-     * on A, B, C only.
-     */
     private fun nodeIdForIndex(
         index: Int
     ): String {
 
         return "N$index"
     }
-
 
     // =====================================================
     // PAYLOAD
@@ -1688,24 +2571,13 @@ class B0ExperimentRunner {
         payloadBytes: Int
     ): String {
 
-        /*
-         * Current Packet stores payload as String.
-         *
-         * For simulation, this gives us a deterministic
-         * payload of approximately the requested byte
-         * count for ASCII characters.
-         *
-         * Later physical BLE experiments must record
-         * actual encoded byte length.
-         */
         return "X".repeat(
             payloadBytes
         )
     }
 
-
     // =====================================================
-    // RESEARCH VALIDATION
+    // PACKET ACCOUNTING VALIDATION
     // =====================================================
 
     private fun validatePacketAccounting(
@@ -1769,18 +2641,186 @@ class B0ExperimentRunner {
         }
     }
 
+    // =====================================================
+    // CROSS-STREAM RECONCILIATION
+    // =====================================================
+
+    private fun validateCrossStreamReconciliation(
+        config: ExperimentConfig,
+        packets: List<PacketRecord>,
+        transmissions: List<TransmissionRecord>,
+        queueEvents: List<QueueEventRecord>,
+        topologyEvents: List<TopologyEventRecord>,
+        resourceSamples: List<ResourceSampleRecord>
+    ) {
+
+        require(
+            packets.size ==
+                    config.traffic.packetCount
+        ) {
+            "Cross-stream validation failed: " +
+                    "terminal packet count does not match generated packet count."
+        }
+
+        val transmissionAttemptCount =
+            transmissions.size.toLong()
+
+        val resourcePhysicalAttempts =
+            resourceSamples.sumOf {
+                it.physicalAttempts
+            }
+
+        require(
+            transmissionAttemptCount ==
+                    resourcePhysicalAttempts
+        ) {
+            "Cross-stream validation failed: " +
+                    "TransmissionRecord count=$transmissionAttemptCount " +
+                    "but resource physicalAttempts=$resourcePhysicalAttempts."
+        }
+
+        val transmissionRetransmissions =
+            transmissions.count {
+                it.attemptNumber > 1
+            }.toLong()
+
+        val resourceRetransmissions =
+            resourceSamples.sumOf {
+                it.retransmissions
+            }
+
+        require(
+            transmissionRetransmissions ==
+                    resourceRetransmissions
+        ) {
+            "Cross-stream validation failed: " +
+                    "transmission retransmissions=" +
+                    "$transmissionRetransmissions " +
+                    "but resource retransmissions=" +
+                    "$resourceRetransmissions."
+        }
+
+        val successfulLogicalHopCount =
+            transmissions
+                .groupBy {
+                    Pair(
+                        it.messageId,
+                        it.logicalHopIndex
+                    )
+                }
+                .count { (_, attempts) ->
+
+                    attempts.any {
+                        it.success
+                    }
+                }
+                .toLong()
+
+        val resourceSuccessfulTransmissions =
+            resourceSamples.sumOf {
+                it.packetsTransmitted
+            }
+
+        val resourceSuccessfulReceives =
+            resourceSamples.sumOf {
+                it.packetsReceived
+            }
+
+        require(
+            successfulLogicalHopCount ==
+                    resourceSuccessfulTransmissions
+        ) {
+            "Cross-stream validation failed: " +
+                    "successful logical hops=" +
+                    "$successfulLogicalHopCount " +
+                    "but resource packetsTransmitted=" +
+                    "$resourceSuccessfulTransmissions."
+        }
+
+        require(
+            successfulLogicalHopCount ==
+                    resourceSuccessfulReceives
+        ) {
+            "Cross-stream validation failed: " +
+                    "successful logical hops=" +
+                    "$successfulLogicalHopCount " +
+                    "but resource packetsReceived=" +
+                    "$resourceSuccessfulReceives."
+        }
+
+        val enqueueCount =
+            queueEvents.count {
+                it.eventType ==
+                        com.example.peertopeer.simulation.experiment.record.QueueEventType.ENQUEUED
+            }
+
+        val dequeueCount =
+            queueEvents.count {
+                it.eventType ==
+                        com.example.peertopeer.simulation.experiment.record.QueueEventType.DEQUEUED
+            }
+
+        require(
+            enqueueCount ==
+                    dequeueCount
+        ) {
+            "Cross-stream validation failed: " +
+                    "queue ENQUEUED=$enqueueCount " +
+                    "but DEQUEUED=$dequeueCount."
+        }
+
+        require(
+            topologyEvents.all {
+                it.runId ==
+                        config.runId
+            }
+        ) {
+            "Cross-stream validation failed: " +
+                    "topology event belongs to another run."
+        }
+
+        require(
+            resourceSamples.all {
+                it.runId ==
+                        config.runId
+            }
+        ) {
+            "Cross-stream validation failed: " +
+                    "resource sample belongs to another run."
+        }
+
+        require(
+            resourceSamples.size ==
+                    config.scenario.nodeCount
+        ) {
+            "Cross-stream validation failed: " +
+                    "expected ${config.scenario.nodeCount} " +
+                    "resource samples, found ${resourceSamples.size}."
+        }
+
+        require(
+            resourceSamples
+                .map {
+                    it.nodeId
+                }
+                .distinct()
+                .size ==
+                    config.scenario.nodeCount
+        ) {
+            "Cross-stream validation failed: " +
+                    "duplicate or missing node resource samples."
+        }
+    }
+
+    // =====================================================
+    // TRANSMISSION VALIDATION
+    // =====================================================
 
     private fun validateTransmissionAccounting(
         transmissions:
         List<TransmissionRecord>
     ) {
 
-        /*
-         * Every recorded physical transmission must
-         * belong to a logical hop.
-         *
-         * We fixed this before building the runner.
-         */
         require(
             transmissions.all {
                 it.logicalHopIndex != null
@@ -1789,12 +2829,6 @@ class B0ExperimentRunner {
             "Transmission record missing logicalHopIndex."
         }
 
-        /*
-         * Within one logical hop:
-         *
-         * attempt numbers must begin at 1 and proceed
-         * without gaps.
-         */
         val groups =
             transmissions.groupBy {
                 "${it.messageId}:" +
@@ -1827,6 +2861,10 @@ class B0ExperimentRunner {
         }
     }
 
+    // =====================================================
+    // RESOURCE PROXY DERIVATION
+    // =====================================================
+
     private fun buildFinalResourceSamples(
         config: ExperimentConfig,
         packets: List<PacketRecord>,
@@ -1835,18 +2873,21 @@ class B0ExperimentRunner {
         sampleTime: Long
     ): List<ResourceSampleRecord> {
 
+        /*
+         * Queue records remain the canonical source
+         * for queue behavior.
+         *
+         * The parameter remains here so the resource
+         * derivation function has access to all raw
+         * experiment streams if needed later.
+         */
+        queueEvents.size
+
         val packetByMessageId =
             packets.associateBy {
                 it.messageId
             }
 
-        /*
-         * A logical hop may contain multiple physical
-         * attempts.
-         *
-         * Group all attempts belonging to the same
-         * message + logical hop.
-         */
         val logicalHopGroups =
             transmissions.groupBy {
                 Pair(
@@ -1855,21 +2896,13 @@ class B0ExperimentRunner {
                 )
             }
 
-        /*
-         * A logical hop counts as successfully transmitted
-         * only if one of its physical attempts succeeded.
-         */
         val successfulLogicalHops =
             logicalHopGroups.values
                 .mapNotNull { attempts ->
 
-                    val successfulAttempt =
-                        attempts.firstOrNull {
-                            it.success
-                        }
-                            ?: return@mapNotNull null
-
-                    successfulAttempt
+                    attempts.firstOrNull {
+                        it.success
+                    }
                 }
 
         val nodeIds =
@@ -1889,31 +2922,15 @@ class B0ExperimentRunner {
             .sorted()
             .map { nodeId ->
 
-                // -----------------------------------------
-                // SUCCESSFUL LOGICAL TRANSMISSIONS
-                // -----------------------------------------
-
                 val transmittedLogicalHops =
                     successfulLogicalHops.count {
                         it.fromNodeId == nodeId
                     }
 
-                // -----------------------------------------
-                // SUCCESSFUL LOGICAL RECEIVES
-                // -----------------------------------------
-
                 val receivedLogicalHops =
                     successfulLogicalHops.count {
                         it.toNodeId == nodeId
                     }
-
-                // -----------------------------------------
-                // FORWARDED PACKETS
-                //
-                // A relay transmission is an outgoing
-                // successful logical hop made by a node
-                // that was not the original packet source.
-                // -----------------------------------------
 
                 val forwardedLogicalHops =
                     successfulLogicalHops.count { transmission ->
@@ -1930,21 +2947,10 @@ class B0ExperimentRunner {
                                 nodeId
                     }
 
-                // -----------------------------------------
-                // PHYSICAL ATTEMPTS
-                // -----------------------------------------
-
                 val nodePhysicalAttempts =
                     transmissions.count {
                         it.fromNodeId == nodeId
                     }
-
-                // -----------------------------------------
-                // RETRANSMISSIONS
-                //
-                // Attempt number 1 is the original attempt.
-                // Anything > 1 is a retransmission.
-                // -----------------------------------------
 
                 val nodeRetransmissions =
                     transmissions.count {
@@ -1978,27 +2984,19 @@ class B0ExperimentRunner {
                     retransmissions =
                         nodeRetransmissions.toLong(),
 
-                    /*
-                     * Final queue occupancy is not used as
-                     * the congestion measure.
-                     *
-                     * QueueEventRecord remains the canonical
-                     * source for occupancy and waiting-time
-                     * behavior.
-                     */
                     queueOccupancy =
                         0,
 
-                    /*
-                     * Current B0 telemetry is run-level.
-                     * We do not fabricate per-node routing
-                     * calculation attribution.
-                     */
                     routingCalculations =
                         0L
                 )
             }
     }
+
+    // =====================================================
+    // BUILD FINAL RUN OUTPUT
+    // =====================================================
+
     private fun buildRunOutput(
         config: ExperimentConfig,
         recorder: ExperimentRecorder,
@@ -2019,10 +3017,6 @@ class B0ExperimentRunner {
 
         val queueEventRecords =
             recorder.getQueueEventRecords()
-
-        // =================================================
-        // DERIVED RESOURCE PROXY SAMPLES
-        // =================================================
 
         val existingResourceSamples =
             recorder.getResourceSampleRecords()
@@ -2048,10 +3042,6 @@ class B0ExperimentRunner {
                         ?: 0L
             )
 
-        // =================================================
-        // VALIDATION
-        // =================================================
-
         validatePacketAccounting(
             config = config,
             packets = packetRecords
@@ -2061,9 +3051,14 @@ class B0ExperimentRunner {
             transmissions = transmissionRecords
         )
 
-        // =================================================
-        // AGGREGATION
-        // =================================================
+        validateCrossStreamReconciliation(
+            config = config,
+            packets = packetRecords,
+            transmissions = transmissionRecords,
+            queueEvents = queueEventRecords,
+            topologyEvents = topologyEventRecords,
+            resourceSamples = resourceSampleRecords
+        )
 
         val summary =
             ExperimentAggregator.aggregate(
@@ -2087,6 +3082,117 @@ class B0ExperimentRunner {
             resourceSamples = resourceSampleRecords
         )
     }
+    private fun scheduleSeededTraffic(
+        config: ExperimentConfig,
+        simulationEngine: SimulationEngine,
+        random: Random,
+        sendPacket: (
+            packetIndex: Int,
+            generationTime: Long
+        ) -> Unit
+    ) {
+
+        val burstProbability =
+            config.traffic.burstProbability
+
+        val burstSize =
+            config.traffic.burstSize
+
+        val burstSpacing =
+            config.traffic.burstSpacing
+
+        /*
+         * Non-bursty traffic remains exactly equivalent
+         * to the existing fixed-interval generator.
+         */
+        if (
+            burstProbability == null ||
+            burstSize == null ||
+            burstSpacing == null
+        ) {
+
+            repeat(
+                config.traffic.packetCount
+            ) { packetIndex ->
+
+                val generationTime =
+                    packetIndex.toLong() *
+                            config.traffic.packetInterval
+
+                simulationEngine.schedule(
+                    generationTime
+                ) {
+
+                    sendPacket(
+                        packetIndex,
+                        generationTime
+                    )
+                }
+            }
+
+            return
+        }
+
+        var packetIndex =
+            0
+
+        var baseTime =
+            0L
+
+        while (
+            packetIndex <
+            config.traffic.packetCount
+        ) {
+
+            val generateBurst =
+                random.nextDouble() <
+                        burstProbability
+
+            val packetsThisOpportunity =
+                if (generateBurst) {
+                    minOf(
+                        burstSize,
+                        config.traffic.packetCount -
+                                packetIndex
+                    )
+                } else {
+                    1
+                }
+
+            repeat(
+                packetsThisOpportunity
+            ) { burstIndex ->
+
+                val currentPacketIndex =
+                    packetIndex
+
+                val generationTime =
+                    baseTime +
+                            burstIndex *
+                            burstSpacing
+
+                simulationEngine.schedule(
+                    generationTime
+                ) {
+
+                    sendPacket(
+                        currentPacketIndex,
+                        generationTime
+                    )
+                }
+
+                packetIndex++
+            }
+
+            baseTime +=
+                config.traffic.packetInterval
+        }
+    }
+
+    // =====================================================
+    // MESSAGE-ID HELPER
+    // =====================================================
+
     private fun extractPacketIndex(
         messageId: String
     ): Int {

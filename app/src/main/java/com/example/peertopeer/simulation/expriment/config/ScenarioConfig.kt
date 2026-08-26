@@ -68,7 +68,9 @@ data class ScenarioConfig(
      * Never use this field as a substitute for
      * machine-readable configuration.
      */
-    val notes: String = ""
+    val notes: String = "",
+    val topologyFailureProbability: Double? = null,
+    val topologyDecisionTimes: List<Long> = emptyList()
 ) {
 
     init {
@@ -99,6 +101,19 @@ data class ScenarioConfig(
 
         require(conditionName.isNotBlank()) {
             "conditionName cannot be blank."
+        }
+        topologyFailureProbability?.let {
+            require(it in 0.0..1.0) {
+                "topologyFailureProbability must be between 0.0 and 1.0."
+            }
+        }
+
+        require(
+            topologyDecisionTimes.all {
+                it >= 0L
+            }
+        ) {
+            "topologyDecisionTimes cannot contain negative values."
         }
     }
 }

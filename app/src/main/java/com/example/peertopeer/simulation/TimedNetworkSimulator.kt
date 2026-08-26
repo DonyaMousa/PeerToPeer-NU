@@ -207,11 +207,22 @@ class TimedNetworkSimulator(
 
         /*
          * Ask for a route using the current graph.
+         *
+         * IMPORTANT:
+         * messageId is passed so routing events can
+         * be attributed to the packet that triggered
+         * the routing decision.
          */
         val initialPath =
             routeProvider.findPath(
-                currentNodeId = packet.sourceId,
-                destinationId = packet.destinationId
+                currentNodeId =
+                    packet.sourceId,
+
+                destinationId =
+                    packet.destinationId,
+
+                messageId =
+                    packet.messageId
             )
 
         if (
@@ -339,10 +350,17 @@ class TimedNetworkSimulator(
             if (dynamicProvider != null) {
 
                 resolveDynamicNextHop(
-                    provider = dynamicProvider,
-                    currentNodeId = nodeId,
+                    provider =
+                        dynamicProvider,
+
+                    currentNodeId =
+                        nodeId,
+
                     destinationId =
-                        packet.destinationId
+                        packet.destinationId,
+
+                    messageId =
+                        packet.messageId
                 )
 
             } else {
@@ -350,6 +368,7 @@ class TimedNetworkSimulator(
                 resolveFixedNextHop(
                     messageId =
                         packet.messageId,
+
                     currentNodeId =
                         nodeId
                 )
@@ -386,19 +405,29 @@ class TimedNetworkSimulator(
     private fun resolveDynamicNextHop(
         provider: TimedRouteProvider,
         currentNodeId: String,
-        destinationId: String
+        destinationId: String,
+        messageId: String
     ): String? {
 
         /*
-         * Fresh Dijkstra decision against
+         * Fresh routing decision against
          * the current topology.
+         *
+         * messageId is propagated so every
+         * ROUTE_REQUEST / ROUTE_FOUND /
+         * ROUTE_CHANGED / NO_ROUTE event can
+         * be attributed to this packet.
          */
         val path =
             provider.findPath(
                 currentNodeId =
                     currentNodeId,
+
                 destinationId =
-                    destinationId
+                    destinationId,
+
+                messageId =
+                    messageId
             )
 
         if (
@@ -499,10 +528,13 @@ class TimedNetworkSimulator(
         eventDrivenLinkTransmitter.transmit(
             fromNodeId =
                 state.currentNodeId,
+
             toNodeId =
                 nextHopId,
+
             messageId =
                 state.packet.messageId,
+
             startTime =
                 startTime
         ) {
@@ -558,6 +590,7 @@ class TimedNetworkSimulator(
                 recordDrop(
                     packetState =
                         forwardedState,
+
                     reason =
                         PacketDropReason.QUEUE_FULL
                 )
@@ -565,12 +598,12 @@ class TimedNetworkSimulator(
                 return@transmit
             }
 
-            println(
-                "t=$completionTime: " +
-                        "${state.packet.messageId} " +
-                        "${state.currentNodeId} -> $nextHopId " +
-                        "after ${transmission.attempts} attempt(s)"
-            )
+            /*
+             * Per-hop console debug intentionally disabled.
+             *
+             * Raw transmission evidence is still recorded
+             * through instrumentation.
+             */
         }
     }
 
@@ -586,10 +619,13 @@ class TimedNetworkSimulator(
         return PacketState(
             packet =
                 packet,
+
             currentNodeId =
                 packet.sourceId,
+
             remainingTtl =
                 packet.ttl,
+
             hopCount =
                 0
         )
@@ -627,16 +663,22 @@ class TimedNetworkSimulator(
             TimedDeliveryResult(
                 messageId =
                     messageId,
+
                 createdAt =
                     packetState.packet.createdAt,
+
                 deliveredAt =
                     null,
+
                 droppedAt =
                     simulationEngine.currentTime,
+
                 delivered =
                     false,
+
                 dropped =
                     true,
+
                 dropReason =
                     reason
             )
@@ -698,28 +740,40 @@ class TimedNetworkSimulator(
             PacketRecord(
                 runId =
                     activeRunId,
+
                 messageId =
                     packet.messageId,
+
                 sourceId =
                     packet.sourceId,
+
                 destinationId =
                     packet.destinationId,
+
                 createdAt =
                     packet.createdAt,
+
                 deliveredAt =
                     result.deliveredAt,
+
                 droppedAt =
                     result.droppedAt,
+
                 delivered =
                     result.delivered,
+
                 dropped =
                     result.dropped,
+
                 dropReason =
                     result.dropReason,
+
                 hopCount =
                     packetState.hopCount,
+
                 endToEndLatency =
                     result.endToEndLatency(),
+
                 terminationTime =
                     failureTerminationTime
             )
