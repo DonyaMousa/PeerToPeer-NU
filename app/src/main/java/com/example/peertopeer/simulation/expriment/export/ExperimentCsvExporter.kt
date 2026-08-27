@@ -9,6 +9,7 @@ import com.example.peertopeer.simulation.experiment.record.TopologyEventRecord
 import com.example.peertopeer.simulation.experiment.record.TransmissionRecord
 import com.example.peertopeer.simulation.experiment.result.RunSummary
 import com.example.peertopeer.simulation.experiment.runner.B0ExperimentRunner
+import com.example.peertopeer.simulation.experiment.runner.MMExperimentRunner
 import java.io.File
 
 class ExperimentCsvExporter(
@@ -56,6 +57,44 @@ class ExperimentCsvExporter(
             output.summary
         )
     }
+    fun exportRun(
+        config: ExperimentConfig,
+        output: MMExperimentRunner.RunOutput
+    ) {
+
+        appendRunConfig(
+            config
+        )
+
+        appendPackets(
+            output.packets
+        )
+
+        appendTransmissions(
+            output.transmissions
+        )
+
+        appendRoutingEvents(
+            output.routingEvents
+        )
+
+        appendTopologyEvents(
+            output.topologyEvents
+        )
+
+        appendQueueEvents(
+            output.queueEvents
+        )
+
+        appendResourceSamples(
+            output.resourceSamples
+        )
+
+        appendSummary(
+            output.summary
+        )
+    }
+
 
     // =====================================================
     // RUN CONFIGURATION
