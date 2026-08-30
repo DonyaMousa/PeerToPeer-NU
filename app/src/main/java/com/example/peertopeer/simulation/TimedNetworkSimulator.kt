@@ -3,6 +3,7 @@ package com.example.peertopeer.simulation
 import com.example.peertopeer.network.Packet
 import com.example.peertopeer.network.PacketDropReason
 import com.example.peertopeer.network.PacketState
+import com.example.peertopeer.routing.hybrid.TwoRegimeRouteDecision
 import com.example.peertopeer.simulation.experiment.instrumentation.ExperimentInstrumentation
 import com.example.peertopeer.simulation.experiment.record.PacketRecord
 
@@ -17,9 +18,6 @@ class TimedNetworkSimulator(
 
     /*
      * Compatibility constructor.
-     *
-     * Existing tests using the old synchronous
-     * TimedLinkTransmitter continue to work.
      */
     constructor(
         simulationEngine: SimulationEngine,
@@ -42,26 +40,28 @@ class TimedNetworkSimulator(
         mutableMapOf<String, TimedNetworkNode>()
 
     /*
-     * Legacy / fixed B0 routes.
-     *
-     * messageId -> complete route
+     * Fixed routing.
      */
     private val routes =
         mutableMapOf<String, List<String>>()
 
     /*
-     * Dynamic routing mode.
-     *
-     * Each forwarding decision can request
-     * a fresh route from the provider.
+     * B0 / MM dynamic routing.
      */
     private val dynamicRouteProviders =
         mutableMapOf<String, TimedRouteProvider>()
 
     /*
-     * Terminal packet results.
+     * 2RH routing.
      *
-     * One packet should appear here at most once.
+     * Kept completely separate so B0/MM semantics remain
+     * unchanged.
+     */
+    private val twoRegimeRouteProviders =
+        mutableMapOf<String, TwoRegimeRouteProvider>()
+
+    /*
+     * Terminal results.
      */
     private val results =
         mutableListOf<TimedDeliveryResult>()
@@ -77,36 +77,63 @@ class TimedNetworkSimulator(
         serviceTime: Long
     ) {
 
-        require(nodeId.isNotBlank()) {
+        require(
+            nodeId.isNotBlank()
+        ) {
             "nodeId cannot be blank."
         }
 
-        require(!nodes.containsKey(nodeId)) {
+        require(
+            !nodes.containsKey(
+                nodeId
+            )
+        ) {
             "Node $nodeId already exists."
         }
 
         val timedNode =
             TimedNetworkNode(
-                nodeId = nodeId,
-                queueCapacity = queueCapacity,
-                serviceTime = serviceTime,
-                simulationEngine = simulationEngine,
+
+                nodeId =
+                    nodeId,
+
+                queueCapacity =
+                    queueCapacity,
+
+                serviceTime =
+                    serviceTime,
+
+                simulationEngine =
+                    simulationEngine,
+
                 onProcessed = {
                         processedNodeId,
                         packetState,
                         completionTime ->
 
                     handleProcessedPacket(
-                        nodeId = processedNodeId,
-                        packetState = packetState,
-                        completionTime = completionTime
+
+                        nodeId =
+                            processedNodeId,
+
+                        packetState =
+                            packetState,
+
+                        completionTime =
+                            completionTime
                     )
                 },
-                runId = runId,
-                instrumentation = instrumentation
+
+                runId =
+                    runId,
+
+                instrumentation =
+                    instrumentation
             )
 
-        nodes[nodeId] =
+        nodes[
+            nodeId
+        ] =
             timedNode
     }
 
@@ -120,24 +147,37 @@ class TimedNetworkSimulator(
         path: List<String>
     ) {
 
-        require(messageId.isNotBlank()) {
+        require(
+            messageId.isNotBlank()
+        ) {
             "messageId cannot be blank."
         }
 
-        require(path.size >= 2) {
+        require(
+            path.size >= 2
+        ) {
             "Route must contain at least source and destination."
         }
 
-        routes[messageId] =
+        routes[
+            messageId
+        ] =
             path.toList()
 
         /*
-         * One packet uses either fixed routing
-         * OR dynamic routing.
+         * One packet uses one routing mode only.
          */
         dynamicRouteProviders.remove(
             messageId
         )
+
+        twoRegimeRouteProviders
+            .remove(
+                messageId
+            )
+            ?.clearPacketState(
+                messageId
+            )
     }
 
 
@@ -146,21 +186,32 @@ class TimedNetworkSimulator(
         path: List<String>
     ) {
 
-        require(path.size >= 2) {
+        require(
+            path.size >= 2
+        ) {
             "Route must contain at least source and destination."
         }
 
-        require(path.first() == packet.sourceId) {
+        require(
+            path.first() ==
+                    packet.sourceId
+        ) {
             "Route must start at packet source."
         }
 
-        require(path.last() == packet.destinationId) {
+        require(
+            path.last() ==
+                    packet.destinationId
+        ) {
             "Route must end at packet destination."
         }
 
         setRoute(
-            messageId = packet.messageId,
-            path = path
+            messageId =
+                packet.messageId,
+
+            path =
+                path
         )
 
         val initialState =
@@ -168,19 +219,22 @@ class TimedNetworkSimulator(
                 packet
             )
 
-        val firstNextHop =
-            path[1]
-
         scheduleHop(
-            state = initialState,
-            nextHopId = firstNextHop,
-            startTime = simulationEngine.currentTime
+
+            state =
+                initialState,
+
+            nextHopId =
+                path[1],
+
+            startTime =
+                simulationEngine.currentTime
         )
     }
 
 
     // =====================================================
-    // DYNAMIC ROUTING
+    // B0 / MM DYNAMIC ROUTING
     // =====================================================
 
     fun send(
@@ -190,31 +244,29 @@ class TimedNetworkSimulator(
 
         dynamicRouteProviders[
             packet.messageId
-        ] = routeProvider
+        ] =
+            routeProvider
 
-        /*
-         * Prevent stale fixed routing state from
-         * remaining attached to the same message.
-         */
         routes.remove(
             packet.messageId
         )
+
+        twoRegimeRouteProviders
+            .remove(
+                packet.messageId
+            )
+            ?.clearPacketState(
+                packet.messageId
+            )
 
         val initialState =
             createInitialState(
                 packet
             )
 
-        /*
-         * Ask for a route using the current graph.
-         *
-         * IMPORTANT:
-         * messageId is passed so routing events can
-         * be attributed to the packet that triggered
-         * the routing decision.
-         */
         val initialPath =
             routeProvider.findPath(
+
                 currentNodeId =
                     packet.sourceId,
 
@@ -227,27 +279,106 @@ class TimedNetworkSimulator(
 
         if (
             !isValidDynamicPath(
-                path = initialPath,
-                currentNodeId = packet.sourceId,
-                destinationId = packet.destinationId
+
+                path =
+                    initialPath,
+
+                currentNodeId =
+                    packet.sourceId,
+
+                destinationId =
+                    packet.destinationId
             )
         ) {
 
             recordDrop(
-                packetState = initialState,
-                reason = PacketDropReason.NO_ROUTE
+
+                packetState =
+                    initialState,
+
+                reason =
+                    PacketDropReason.NO_ROUTE
             )
 
             return
         }
 
-        val firstNextHop =
-            initialPath!![1]
-
         scheduleHop(
-            state = initialState,
-            nextHopId = firstNextHop,
-            startTime = simulationEngine.currentTime
+
+            state =
+                initialState,
+
+            nextHopId =
+                initialPath!![1],
+
+            startTime =
+                simulationEngine.currentTime
+        )
+    }
+
+
+    // =====================================================
+    // TWO-REGIME HYBRID ROUTING
+    // =====================================================
+
+    fun send(
+        packet: Packet,
+        routeProvider: TwoRegimeRouteProvider
+    ) {
+
+        twoRegimeRouteProviders[
+            packet.messageId
+        ] =
+            routeProvider
+
+        routes.remove(
+            packet.messageId
+        )
+
+        dynamicRouteProviders.remove(
+            packet.messageId
+        )
+
+        val initialState =
+            createInitialState(
+                packet
+            )
+
+        /*
+         * Initial 2RH decision:
+         *
+         * HIGH -> Forward
+         * LOW  -> Carry
+         */
+        val decision =
+            routeProvider.decide(
+
+                currentNodeId =
+                    packet.sourceId,
+
+                destinationId =
+                    packet.destinationId,
+
+                messageId =
+                    packet.messageId
+            )
+
+        executeTwoRegimeDecision(
+
+            packetState =
+                initialState,
+
+            currentNodeId =
+                packet.sourceId,
+
+            decisionTime =
+                simulationEngine.currentTime,
+
+            provider =
+                routeProvider,
+
+            decision =
+                decision
         )
     }
 
@@ -265,9 +396,10 @@ class TimedNetworkSimulator(
         val packet =
             packetState.packet
 
-        /*
-         * Destination completed processing.
-         */
+        // -------------------------------------------------
+        // DESTINATION
+        // -------------------------------------------------
+
         if (
             nodeId ==
             packet.destinationId
@@ -279,24 +411,33 @@ class TimedNetworkSimulator(
                             packet.messageId
                 }
 
-            if (alreadyFinished) {
+            if (
+                alreadyFinished
+            ) {
                 return
             }
 
             val result =
                 TimedDeliveryResult(
+
                     messageId =
                         packet.messageId,
+
                     createdAt =
                         packet.createdAt,
+
                     deliveredAt =
                         completionTime,
+
                     droppedAt =
                         null,
+
                     delivered =
                         true,
+
                     dropped =
                         false,
+
                     dropReason =
                         null
                 )
@@ -305,13 +446,13 @@ class TimedNetworkSimulator(
                 result
             )
 
-            /*
-             * Research evidence:
-             * exactly one terminal PacketRecord.
-             */
             recordPacketOutcome(
-                packetState = packetState,
-                result = result
+
+                packetState =
+                    packetState,
+
+                result =
+                    result
             )
 
             clearRoutingState(
@@ -321,15 +462,19 @@ class TimedNetworkSimulator(
             return
         }
 
-        /*
-         * Packet cannot continue forwarding.
-         */
+        // -------------------------------------------------
+        // TTL
+        // -------------------------------------------------
+
         if (
             packetState.remainingTtl <= 0
         ) {
 
             recordDrop(
-                packetState = packetState,
+
+                packetState =
+                    packetState,
+
                 reason =
                     PacketDropReason.TTL_EXPIRED
             )
@@ -337,19 +482,69 @@ class TimedNetworkSimulator(
             return
         }
 
-        /*
-         * Dynamic packets request a fresh route
-         * from their current node.
-         */
+        // =================================================
+        // 2RH
+        // =================================================
+
+        val twoRegimeProvider =
+            twoRegimeRouteProviders[
+                packet.messageId
+            ]
+
+        if (
+            twoRegimeProvider != null
+        ) {
+
+            val decision =
+                twoRegimeProvider.decide(
+
+                    currentNodeId =
+                        nodeId,
+
+                    destinationId =
+                        packet.destinationId,
+
+                    messageId =
+                        packet.messageId
+                )
+
+            executeTwoRegimeDecision(
+
+                packetState =
+                    packetState,
+
+                currentNodeId =
+                    nodeId,
+
+                decisionTime =
+                    completionTime,
+
+                provider =
+                    twoRegimeProvider,
+
+                decision =
+                    decision
+            )
+
+            return
+        }
+
+        // =================================================
+        // EXISTING B0 / MM / FIXED ROUTING
+        // =================================================
+
         val dynamicProvider =
             dynamicRouteProviders[
                 packet.messageId
             ]
 
         val nextHopId =
-            if (dynamicProvider != null) {
+            if (
+                dynamicProvider != null
+            ) {
 
                 resolveDynamicNextHop(
+
                     provider =
                         dynamicProvider,
 
@@ -366,6 +561,7 @@ class TimedNetworkSimulator(
             } else {
 
                 resolveFixedNextHop(
+
                     messageId =
                         packet.messageId,
 
@@ -374,15 +570,15 @@ class TimedNetworkSimulator(
                 )
             }
 
-        /*
-         * B0 has no store-carry-forward.
-         *
-         * Therefore no route is terminal.
-         */
-        if (nextHopId == null) {
+        if (
+            nextHopId == null
+        ) {
 
             recordDrop(
-                packetState = packetState,
+
+                packetState =
+                    packetState,
+
                 reason =
                     PacketDropReason.NO_ROUTE
             )
@@ -391,15 +587,547 @@ class TimedNetworkSimulator(
         }
 
         scheduleHop(
-            state = packetState,
-            nextHopId = nextHopId,
-            startTime = completionTime
+
+            state =
+                packetState,
+
+            nextHopId =
+                nextHopId,
+
+            startTime =
+                completionTime
         )
     }
 
 
     // =====================================================
-    // DYNAMIC NEXT-HOP RESOLUTION
+    // 2RH DECISION EXECUTION
+    // =====================================================
+
+    private fun executeTwoRegimeDecision(
+        packetState: PacketState,
+        currentNodeId: String,
+        decisionTime: Long,
+        provider: TwoRegimeRouteProvider,
+        decision: TwoRegimeRouteDecision
+    ) {
+
+        val packet =
+            packetState.packet
+
+        /*
+         * Future Carry events may still be scheduled after
+         * another event has already terminated the packet.
+         */
+        val alreadyFinished =
+            results.any {
+                it.messageId ==
+                        packet.messageId
+            }
+
+        if (
+            alreadyFinished
+        ) {
+            return
+        }
+
+        if (
+            packetState.remainingTtl <= 0
+        ) {
+
+            recordDrop(
+
+                packetState =
+                    packetState,
+
+                reason =
+                    PacketDropReason.TTL_EXPIRED
+            )
+
+            return
+        }
+
+        /*
+         * Exhaustive sealed-class handling.
+         *
+         * Forward
+         * Carry
+         * Probe
+         * Drop
+         */
+        when (
+            decision
+        ) {
+
+            // =============================================
+            // HIGH
+            // =============================================
+
+            is TwoRegimeRouteDecision.Forward -> {
+
+                val path =
+                    decision.path
+
+                if (
+                    !isValidDynamicPath(
+
+                        path =
+                            path,
+
+                        currentNodeId =
+                            currentNodeId,
+
+                        destinationId =
+                            packet.destinationId
+                    )
+                ) {
+
+                    recordDrop(
+
+                        packetState =
+                            packetState,
+
+                        reason =
+                            PacketDropReason.NO_ROUTE
+                    )
+
+                    return
+                }
+
+                scheduleHop(
+
+                    state =
+                        packetState,
+
+                    nextHopId =
+                        path[1],
+
+                    startTime =
+                        decisionTime
+                )
+            }
+
+
+            // =============================================
+            // LOW — CARRY
+            // =============================================
+
+            is TwoRegimeRouteDecision.Carry -> {
+
+                val reevaluationTime =
+                    decisionTime +
+                            decision.reevaluationDelay
+
+                /*
+                 * No physical forwarding takes place during
+                 * Carry, so hop TTL is not decremented.
+                 *
+                 * The LOW fallback budget bounds this wait.
+                 */
+                simulationEngine.schedule(
+                    reevaluationTime
+                ) {
+
+                    val reevaluatedDecision =
+                        provider.decideAfterCarry(
+
+                            currentNodeId =
+                                currentNodeId,
+
+                            destinationId =
+                                packet.destinationId,
+
+                            messageId =
+                                packet.messageId
+                        )
+
+                    executeTwoRegimeDecision(
+
+                        packetState =
+                            packetState,
+
+                        currentNodeId =
+                            currentNodeId,
+
+                        decisionTime =
+                            reevaluationTime,
+
+                        provider =
+                            provider,
+
+                        decision =
+                            reevaluatedDecision
+                    )
+                }
+            }
+
+
+            // =============================================
+            // LOW — SINGLE BOUNDED PROBE
+            // =============================================
+
+            is TwoRegimeRouteDecision.Probe -> {
+
+                val path =
+                    decision.path
+
+                /*
+                 * A probe still requires an existing valid
+                 * deterministic route.
+                 */
+                if (
+                    !isValidDynamicPath(
+
+                        path =
+                            path,
+
+                        currentNodeId =
+                            currentNodeId,
+
+                        destinationId =
+                            packet.destinationId
+                    )
+                ) {
+
+                    /*
+                     * Route disappeared between decision and
+                     * execution.
+                     *
+                     * Return to bounded LOW fallback.
+                     */
+                    val fallbackDecision =
+                        provider.afterProbeFailure(
+
+                            messageId =
+                                packet.messageId,
+
+                            confidence =
+                                decision.confidence
+                        )
+
+                    executeTwoRegimeDecision(
+
+                        packetState =
+                            packetState,
+
+                        currentNodeId =
+                            currentNodeId,
+
+                        decisionTime =
+                            decisionTime,
+
+                        provider =
+                            provider,
+
+                        decision =
+                            fallbackDecision
+                    )
+
+                    return
+                }
+
+                scheduleProbe(
+
+                    state =
+                        packetState,
+
+                    nextHopId =
+                        path[1],
+
+                    startTime =
+                        decisionTime,
+
+                    provider =
+                        provider,
+
+                    probeConfidence =
+                        decision.confidence
+                )
+            }
+
+
+            // =============================================
+            // LOW — BUDGET EXHAUSTED
+            // =============================================
+
+            is TwoRegimeRouteDecision.Drop -> {
+
+                /*
+                 * Common frozen schema does not yet contain
+                 * FALLBACK_EXHAUSTED.
+                 *
+                 * Therefore 2RH currently maps terminal LOW
+                 * exhaustion to NO_ROUTE.
+                 */
+                recordDrop(
+
+                    packetState =
+                        packetState,
+
+                    reason =
+                        PacketDropReason.NO_ROUTE
+                )
+            }
+        }
+    }
+
+
+    // =====================================================
+    // LOW PROBE
+    // =====================================================
+
+    private fun scheduleProbe(
+        state: PacketState,
+        nextHopId: String,
+        startTime: Long,
+        provider: TwoRegimeRouteProvider,
+        probeConfidence: Double
+    ) {
+
+        val packet =
+            state.packet
+
+        val nextNode =
+            nodes[
+                nextHopId
+            ]
+
+        /*
+         * A probe cannot execute if the next simulated node
+         * is unavailable.
+         *
+         * This is not terminal yet; it returns to LOW Carry.
+         */
+        if (
+            nextNode == null
+        ) {
+
+            val fallbackDecision =
+                provider.afterProbeFailure(
+
+                    messageId =
+                        packet.messageId,
+
+                    confidence =
+                        probeConfidence
+                )
+
+            executeTwoRegimeDecision(
+
+                packetState =
+                    state,
+
+                currentNodeId =
+                    state.currentNodeId,
+
+                decisionTime =
+                    startTime,
+
+                provider =
+                    provider,
+
+                decision =
+                    fallbackDecision
+            )
+
+            return
+        }
+
+        eventDrivenLinkTransmitter.transmit(
+
+            fromNodeId =
+                state.currentNodeId,
+
+            toNodeId =
+                nextHopId,
+
+            messageId =
+                packet.messageId,
+
+            startTime =
+                startTime
+
+        ) {
+                transmission,
+                completionTime ->
+
+            /*
+             * Keep common physical transmission telemetry.
+             *
+             * MMInstrumentation also receives the physical
+             * attempt evidence through the transmitter and
+             * updates MultiMetricStateStore.
+             */
+            transmissionTelemetry.record(
+                transmission
+            )
+
+            // ---------------------------------------------
+            // PROBE PHYSICAL FAILURE
+            // ---------------------------------------------
+
+            if (
+                !transmission.success
+            ) {
+
+                /*
+                 * IMPORTANT:
+                 *
+                 * Normal HIGH forwarding terminates on retry
+                 * exhaustion.
+                 *
+                 * LOW probe failure does NOT immediately
+                 * terminate the packet.
+                 *
+                 * It generated fresh negative evidence and
+                 * returns to bounded Carry.
+                 */
+                val fallbackDecision =
+                    provider.afterProbeFailure(
+
+                        messageId =
+                            packet.messageId,
+
+                        confidence =
+                            probeConfidence
+                    )
+
+                executeTwoRegimeDecision(
+
+                    packetState =
+                        state,
+
+                    currentNodeId =
+                        state.currentNodeId,
+
+                    decisionTime =
+                        completionTime,
+
+                    provider =
+                        provider,
+
+                    decision =
+                        fallbackDecision
+                )
+
+                return@transmit
+            }
+
+            // ---------------------------------------------
+            // TTL
+            // ---------------------------------------------
+
+            if (
+                state.remainingTtl <= 0
+            ) {
+
+                recordDrop(
+
+                    packetState =
+                        state,
+
+                    reason =
+                        PacketDropReason.TTL_EXPIRED
+                )
+
+                return@transmit
+            }
+
+            /*
+             * Successful probe actually moves the payload
+             * one hop.
+             *
+             * This is still single-copy forwarding.
+             */
+            val forwardedState =
+                state.forwardTo(
+                    nextHopId
+                )
+
+            val accepted =
+                nextNode.receive(
+                    forwardedState
+                )
+
+            // ---------------------------------------------
+            // NEXT-HOP QUEUE REJECTED PROBE
+            // ---------------------------------------------
+
+            if (
+                !accepted
+            ) {
+
+                /*
+                 * The forwarding opportunity existed, but
+                 * the receiver was congested.
+                 *
+                 * Treat that as failed LOW recovery rather
+                 * than immediately terminating the packet.
+                 *
+                 * Queue instrumentation supplies fresh
+                 * congestion evidence.
+                 */
+                val fallbackDecision =
+                    provider.afterProbeFailure(
+
+                        messageId =
+                            packet.messageId,
+
+                        confidence =
+                            probeConfidence
+                    )
+
+                /*
+                 * The packet did not successfully enter the
+                 * next node's queue, so continue carrying
+                 * the ORIGINAL state at the current node.
+                 */
+                executeTwoRegimeDecision(
+
+                    packetState =
+                        state,
+
+                    currentNodeId =
+                        state.currentNodeId,
+
+                    decisionTime =
+                        completionTime,
+
+                    provider =
+                        provider,
+
+                    decision =
+                        fallbackDecision
+                )
+
+                return@transmit
+            }
+
+            /*
+             * Probe successfully transmitted AND entered the
+             * receiver queue.
+             */
+            provider.recordProbeSuccess(
+                messageId =
+                    packet.messageId
+            )
+
+            /*
+             * Successful probe:
+             *
+             * packet is now inside the next node.
+             *
+             * TimedNetworkNode processing will eventually
+             * call handleProcessedPacket(), where 2RH will
+             * make a fresh regime decision from the new
+             * location and updated observations.
+             */
+        }
+    }
+
+
+    // =====================================================
+    // B0 / MM DYNAMIC NEXT-HOP RESOLUTION
     // =====================================================
 
     private fun resolveDynamicNextHop(
@@ -409,17 +1137,9 @@ class TimedNetworkSimulator(
         messageId: String
     ): String? {
 
-        /*
-         * Fresh routing decision against
-         * the current topology.
-         *
-         * messageId is propagated so every
-         * ROUTE_REQUEST / ROUTE_FOUND /
-         * ROUTE_CHANGED / NO_ROUTE event can
-         * be attributed to this packet.
-         */
         val path =
             provider.findPath(
+
                 currentNodeId =
                     currentNodeId,
 
@@ -432,9 +1152,15 @@ class TimedNetworkSimulator(
 
         if (
             !isValidDynamicPath(
-                path = path,
-                currentNodeId = currentNodeId,
-                destinationId = destinationId
+
+                path =
+                    path,
+
+                currentNodeId =
+                    currentNodeId,
+
+                destinationId =
+                    destinationId
             )
         ) {
             return null
@@ -450,19 +1176,29 @@ class TimedNetworkSimulator(
         destinationId: String
     ): Boolean {
 
-        if (path == null) {
+        if (
+            path == null
+        ) {
             return false
         }
 
-        if (path.size < 2) {
+        if (
+            path.size < 2
+        ) {
             return false
         }
 
-        if (path.first() != currentNodeId) {
+        if (
+            path.first() !=
+            currentNodeId
+        ) {
             return false
         }
 
-        if (path.last() != destinationId) {
+        if (
+            path.last() !=
+            destinationId
+        ) {
             return false
         }
 
@@ -480,7 +1216,9 @@ class TimedNetworkSimulator(
     ): String? {
 
         val path =
-            routes[messageId]
+            routes[
+                messageId
+            ]
                 ?: return null
 
         val currentIndex =
@@ -490,7 +1228,8 @@ class TimedNetworkSimulator(
 
         if (
             currentIndex == -1 ||
-            currentIndex >= path.lastIndex
+            currentIndex >=
+            path.lastIndex
         ) {
             return null
         }
@@ -502,9 +1241,19 @@ class TimedNetworkSimulator(
 
 
     // =====================================================
-    // LINK TRANSMISSION
+    // NORMAL LINK TRANSMISSION
     // =====================================================
 
+    /*
+     * Used by:
+     *
+     * fixed routing
+     * B0
+     * MM
+     * 2RH HIGH
+     *
+     * Existing behavior is deliberately preserved.
+     */
     private fun scheduleHop(
         state: PacketState,
         nextHopId: String,
@@ -512,12 +1261,19 @@ class TimedNetworkSimulator(
     ) {
 
         val nextNode =
-            nodes[nextHopId]
+            nodes[
+                nextHopId
+            ]
 
-        if (nextNode == null) {
+        if (
+            nextNode == null
+        ) {
 
             recordDrop(
-                packetState = state,
+
+                packetState =
+                    state,
+
                 reason =
                     PacketDropReason.LINK_UNAVAILABLE
             )
@@ -526,6 +1282,7 @@ class TimedNetworkSimulator(
         }
 
         eventDrivenLinkTransmitter.transmit(
+
             fromNodeId =
                 state.currentNodeId,
 
@@ -537,6 +1294,7 @@ class TimedNetworkSimulator(
 
             startTime =
                 startTime
+
         ) {
                 transmission,
                 completionTime ->
@@ -546,12 +1304,18 @@ class TimedNetworkSimulator(
             )
 
             /*
-             * Physical hop exhausted retry budget.
+             * Normal forwarding retains the existing
+             * terminal retry-exhaustion behavior.
              */
-            if (!transmission.success) {
+            if (
+                !transmission.success
+            ) {
 
                 recordDrop(
-                    packetState = state,
+
+                    packetState =
+                        state,
+
                     reason =
                         PacketDropReason.RETRY_EXHAUSTED
                 )
@@ -559,15 +1323,15 @@ class TimedNetworkSimulator(
                 return@transmit
             }
 
-            /*
-             * TTL check before forwarding.
-             */
             if (
                 state.remainingTtl <= 0
             ) {
 
                 recordDrop(
-                    packetState = state,
+
+                    packetState =
+                        state,
+
                     reason =
                         PacketDropReason.TTL_EXPIRED
                 )
@@ -585,9 +1349,12 @@ class TimedNetworkSimulator(
                     forwardedState
                 )
 
-            if (!accepted) {
+            if (
+                !accepted
+            ) {
 
                 recordDrop(
+
                     packetState =
                         forwardedState,
 
@@ -597,13 +1364,6 @@ class TimedNetworkSimulator(
 
                 return@transmit
             }
-
-            /*
-             * Per-hop console debug intentionally disabled.
-             *
-             * Raw transmission evidence is still recorded
-             * through instrumentation.
-             */
         }
     }
 
@@ -617,6 +1377,7 @@ class TimedNetworkSimulator(
     ): PacketState {
 
         return PacketState(
+
             packet =
                 packet,
 
@@ -642,30 +1403,30 @@ class TimedNetworkSimulator(
     ) {
 
         val messageId =
-            packetState.packet.messageId
+            packetState.packet
+                .messageId
 
-        /*
-         * Hard invariant:
-         *
-         * a packet can terminate only once.
-         */
         val alreadyFinished =
             results.any {
                 it.messageId ==
                         messageId
             }
 
-        if (alreadyFinished) {
+        if (
+            alreadyFinished
+        ) {
             return
         }
 
         val result =
             TimedDeliveryResult(
+
                 messageId =
                     messageId,
 
                 createdAt =
-                    packetState.packet.createdAt,
+                    packetState.packet
+                        .createdAt,
 
                 deliveredAt =
                     null,
@@ -687,13 +1448,13 @@ class TimedNetworkSimulator(
             result
         )
 
-        /*
-         * Research evidence:
-         * one terminal row for this packet.
-         */
         recordPacketOutcome(
-            packetState = packetState,
-            result = result
+
+            packetState =
+                packetState,
+
+            result =
+                result
         )
 
         clearRoutingState(
@@ -711,10 +1472,6 @@ class TimedNetworkSimulator(
         result: TimedDeliveryResult
     ) {
 
-        /*
-         * Normal app/tests may run with no
-         * research instrumentation.
-         */
         val activeInstrumentation =
             instrumentation
                 ?: return
@@ -727,7 +1484,9 @@ class TimedNetworkSimulator(
             packetState.packet
 
         val failureTerminationTime =
-            if (result.dropped) {
+            if (
+                result.dropped
+            ) {
 
                 result.timeUntilTermination()
 
@@ -736,50 +1495,57 @@ class TimedNetworkSimulator(
                 null
             }
 
-        activeInstrumentation.onPacketFinished(
-            PacketRecord(
-                runId =
-                    activeRunId,
+        activeInstrumentation
+            .onPacketFinished(
 
-                messageId =
-                    packet.messageId,
+                PacketRecord(
 
-                sourceId =
-                    packet.sourceId,
+                    runId =
+                        activeRunId,
 
-                destinationId =
-                    packet.destinationId,
+                    messageId =
+                        packet.messageId,
 
-                createdAt =
-                    packet.createdAt,
+                    sourceId =
+                        packet.sourceId,
 
-                deliveredAt =
-                    result.deliveredAt,
+                    destinationId =
+                        packet.destinationId,
 
-                droppedAt =
-                    result.droppedAt,
+                    createdAt =
+                        packet.createdAt,
 
-                delivered =
-                    result.delivered,
+                    deliveredAt =
+                        result.deliveredAt,
 
-                dropped =
-                    result.dropped,
+                    droppedAt =
+                        result.droppedAt,
 
-                dropReason =
-                    result.dropReason,
+                    delivered =
+                        result.delivered,
 
-                hopCount =
-                    packetState.hopCount,
+                    dropped =
+                        result.dropped,
 
-                endToEndLatency =
-                    result.endToEndLatency(),
+                    dropReason =
+                        result.dropReason,
 
-                terminationTime =
-                    failureTerminationTime
+                    hopCount =
+                        packetState.hopCount,
+
+                    endToEndLatency =
+                        result.endToEndLatency(),
+
+                    terminationTime =
+                        failureTerminationTime
+                )
             )
-        )
     }
 
+
+    // =====================================================
+    // ROUTING STATE CLEANUP
+    // =====================================================
 
     private fun clearRoutingState(
         messageId: String
@@ -792,6 +1558,17 @@ class TimedNetworkSimulator(
         dynamicRouteProviders.remove(
             messageId
         )
+
+        val twoRegimeProvider =
+            twoRegimeRouteProviders
+                .remove(
+                    messageId
+                )
+
+        twoRegimeProvider
+            ?.clearPacketState(
+                messageId
+            )
     }
 
 
