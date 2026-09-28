@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.peertopeer"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 17
+        versionName = "1.4-v17-carble-research-groups"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

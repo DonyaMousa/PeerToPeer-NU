@@ -3,6 +3,7 @@ package com.example.peertopeer.routing.carble
 import com.example.peertopeer.domain.model.Graph
 import com.example.peertopeer.routing.mm.MultiMetricLinkState
 import com.example.peertopeer.routing.mm.MultiMetricStateStore
+import com.example.peertopeer.routing.mm.QueuePressure
 import java.util.PriorityQueue
 
 class CarbleBackupCandidateFactory(
@@ -225,33 +226,14 @@ class CarbleBackupCandidateFactory(
                  * during physical BLE integration.
                  */
                 val freshness =
-                    1.0
+                    linkState.freshnessNormalized ?: 1.0
 
 
                 // =========================================
                 // A — QUEUE AVAILABILITY
                 // =========================================
 
-                val queuePenalty =
-                    if (
-                        linkState.queueCapacity <= 0
-                    ) {
-
-                        1.0
-
-                    } else {
-
-                        (
-                                linkState.queueOccupancy
-                                    .toDouble() /
-                                        linkState.queueCapacity
-                                            .toDouble()
-                                )
-                            .coerceIn(
-                                0.0,
-                                1.0
-                            )
-                    }
+                val queuePenalty = QueuePressure.normalized(linkState)
 
 
                 val queueAvailability =

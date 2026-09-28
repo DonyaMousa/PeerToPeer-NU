@@ -32,7 +32,7 @@ class TwoRegimeSignalAdapter {
          * freshness once timestamps are available.
          */
         val freshness =
-            1.0
+            state.freshnessNormalized ?: 1.0
 
         /*
          * R — stability
@@ -123,7 +123,7 @@ class TwoRegimeSignalAdapter {
          * available link-quality proxy.
          */
         val signalReliability =
-            deliverySuccess
+            state.signalReliabilityNormalized ?: deliverySuccess
 
         /*
          * B — resource suitability

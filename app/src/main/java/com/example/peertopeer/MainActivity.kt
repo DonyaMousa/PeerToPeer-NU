@@ -4,44 +4,34 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import com.example.peertopeer.diagnostics.CrashReporter
+import com.example.peertopeer.diagnostics.DiagnosticLogger
+import com.example.peertopeer.service.PeerToPeerRuntime
+import com.example.peertopeer.ui.PeerToPeerApp
 import com.example.peertopeer.ui.theme.PeerToPeerTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        CrashReporter.install(applicationContext)
+        CrashReporter.consumeLastCrash(applicationContext)?.let { crash ->
+            val headline = crash.lineSequence().firstOrNull().orEmpty().ifBlank { "Unknown crash" }
+            DiagnosticLogger.error("CRASH", "Previous app crash: $headline")
+        }
+
+        val controller = PeerToPeerRuntime.controller(applicationContext)
+
         enableEdgeToEdge()
         setContent {
             PeerToPeerTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                PeerToPeerApp(controller)
             }
         }
     }
-}
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    PeerToPeerTheme {
-        Greeting("Android")
+    override fun onResume() {
+        super.onResume()
+        PeerToPeerRuntime.controller(applicationContext).onAppForegrounded()
     }
 }

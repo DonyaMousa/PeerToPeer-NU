@@ -336,7 +336,7 @@ class FullCarbleTransitionComparisonRunner(
         graph: Graph,
         finalTime: Long,
         physicalEvents:
-        List<PhysicalLinkEventScheduler.LinkEvent>,
+            List<PhysicalLinkEventScheduler.LinkEvent>,
         attemptPolicy: TimedLinkAttemptPolicy
     ): Result {
 
@@ -402,7 +402,7 @@ class FullCarbleTransitionComparisonRunner(
         graph: Graph,
         finalTime: Long,
         physicalEvents:
-        List<PhysicalLinkEventScheduler.LinkEvent>,
+            List<PhysicalLinkEventScheduler.LinkEvent>,
         attemptPolicy: TimedLinkAttemptPolicy
     ): Result {
 
@@ -613,7 +613,7 @@ class FullCarbleTransitionComparisonRunner(
      * must be frozen before confirmatory seeds are opened.
      */
     private fun fullTransitionCalibrationEvents():
-            List<PhysicalLinkEventScheduler.LinkEvent> {
+        List<PhysicalLinkEventScheduler.LinkEvent> {
 
         return buildList {
 
@@ -1848,7 +1848,7 @@ class FullCarbleTransitionComparisonRunner(
     }
 
     private fun createGraph():
-            Graph {
+        Graph {
 
         val graph = Graph()
 
@@ -1889,3 +1889,4 @@ class FullCarbleTransitionComparisonRunner(
                         )
     }
 }
+

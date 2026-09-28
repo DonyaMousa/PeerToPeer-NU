@@ -1,6 +1,7 @@
 package com.example.peertopeer.routing.carble
 
 import com.example.peertopeer.routing.mm.MultiMetricLinkState
+import com.example.peertopeer.routing.mm.QueuePressure
 
 class CarbleSignalAdapter {
 
@@ -28,7 +29,7 @@ class CarbleSignalAdapter {
          * Keep the SAME proxy used by 2RH.
          */
         val freshness =
-            1.0
+            state.freshnessNormalized ?: 1.0
 
 
         /*
@@ -78,26 +79,7 @@ class CarbleSignalAdapter {
                     delayPenalty
 
 
-        val queuePenalty =
-            if (
-                state.queueCapacity <= 0
-            ) {
-
-                1.0
-
-            } else {
-
-                (
-                        state.queueOccupancy
-                            .toDouble() /
-                                state.queueCapacity
-                                    .toDouble()
-                        )
-                    .coerceIn(
-                        0.0,
-                        1.0
-                    )
-            }
+        val queuePenalty = QueuePressure.normalized(state)
 
         val queueSuitability =
             1.0 -
@@ -119,7 +101,7 @@ class CarbleSignalAdapter {
          * so preserve the exact 2RH proxy.
          */
         val signalReliability =
-            deliverySuccess
+            state.signalReliabilityNormalized ?: deliverySuccess
 
 
         /*

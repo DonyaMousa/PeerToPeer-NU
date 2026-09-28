@@ -252,7 +252,7 @@ class PreFailureProtocolComparisonRunner {
         scenarioSalt: String,
         runPrefix: String,
         physicalEvents:
-        List<PhysicalLinkEventScheduler.LinkEvent>
+            List<PhysicalLinkEventScheduler.LinkEvent>
     ): ComparisonResult {
 
         val probabilities =
@@ -391,7 +391,7 @@ class PreFailureProtocolComparisonRunner {
         queueCapacity: Int,
         serviceTime: Long,
         physicalEvents:
-        List<PhysicalLinkEventScheduler.LinkEvent>,
+            List<PhysicalLinkEventScheduler.LinkEvent>,
         attemptPolicy: TimedLinkAttemptPolicy
     ): ComparisonResult {
 
@@ -503,7 +503,7 @@ class PreFailureProtocolComparisonRunner {
         queueCapacity: Int,
         serviceTime: Long,
         physicalEvents:
-        List<PhysicalLinkEventScheduler.LinkEvent>,
+            List<PhysicalLinkEventScheduler.LinkEvent>,
         attemptPolicy: TimedLinkAttemptPolicy
     ): ComparisonResult {
 
@@ -588,7 +588,7 @@ class PreFailureProtocolComparisonRunner {
         queueCapacity: Int,
         serviceTime: Long,
         physicalEvents:
-        List<PhysicalLinkEventScheduler.LinkEvent>,
+            List<PhysicalLinkEventScheduler.LinkEvent>,
         attemptPolicy: TimedLinkAttemptPolicy
     ): ComparisonResult {
 
@@ -669,7 +669,7 @@ class PreFailureProtocolComparisonRunner {
         queueCapacity: Int,
         serviceTime: Long,
         physicalEvents:
-        List<PhysicalLinkEventScheduler.LinkEvent>,
+            List<PhysicalLinkEventScheduler.LinkEvent>,
         attemptPolicy: TimedLinkAttemptPolicy
     ): ComparisonResult {
 
@@ -766,7 +766,7 @@ class PreFailureProtocolComparisonRunner {
         queueCapacity: Int,
         serviceTime: Long,
         physicalEvents:
-        List<PhysicalLinkEventScheduler.LinkEvent>,
+            List<PhysicalLinkEventScheduler.LinkEvent>,
         attemptPolicy: TimedLinkAttemptPolicy
     ): ComparisonResult {
 
@@ -943,7 +943,7 @@ class PreFailureProtocolComparisonRunner {
         engine: SimulationEngine,
         runId: String,
         instrumentation:
-        ExperimentInstrumentation,
+            ExperimentInstrumentation,
         nodeCount: Int,
         queueCapacity: Int,
         serviceTime: Long,
@@ -1028,12 +1028,12 @@ class PreFailureProtocolComparisonRunner {
         runId: String,
         recorder: ExperimentRecorder,
         twoRh:
-        TwoRegimeTelemetrySnapshot? = null,
+            TwoRegimeTelemetrySnapshot? = null,
         carble:
-        CarbleTelemetrySnapshot? = null,
+            CarbleTelemetrySnapshot? = null,
         regimeEvents:
-        List<CarbleRegimeEventRecord> =
-            emptyList()
+            List<CarbleRegimeEventRecord> =
+                emptyList()
     ): ComparisonResult {
 
         val packets =
@@ -1266,7 +1266,7 @@ class PreFailureProtocolComparisonRunner {
      * confirmatory seeds are run.
      */
     private fun pfB2CalibrationEvents():
-            List<PhysicalLinkEventScheduler.LinkEvent> {
+        List<PhysicalLinkEventScheduler.LinkEvent> {
 
         return buildList {
             addAll(
@@ -1300,7 +1300,7 @@ class PreFailureProtocolComparisonRunner {
      * frozen before confirmatory evaluation.
      */
     private fun pfCCalibrationEvents():
-            List<PhysicalLinkEventScheduler.LinkEvent> {
+        List<PhysicalLinkEventScheduler.LinkEvent> {
 
         return buildList {
             addAll(
@@ -1401,7 +1401,7 @@ class PreFailureProtocolComparisonRunner {
     }
 
     private fun createDualPathGraph():
-            Graph {
+        Graph {
 
         val graph = Graph()
 
@@ -1441,3 +1441,4 @@ class PreFailureProtocolComparisonRunner {
                         )
     }
 }
+

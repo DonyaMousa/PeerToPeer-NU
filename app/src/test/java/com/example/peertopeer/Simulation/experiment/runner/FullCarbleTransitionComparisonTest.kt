@@ -9,13 +9,13 @@ import java.io.File
 class FullCarbleTransitionComparisonTest {
 
     @Test
-    fun full_transition_calibration_all_protocols() {
+    fun full_transition_all_protocols_30_paired_seeds() {
 
         val runner =
             FullCarbleTransitionComparisonRunner()
 
         val seeds =
-            (1001L..1010L).toList()
+            (1L..30L).toList()
 
         val results =
             mutableListOf<
@@ -50,7 +50,7 @@ class FullCarbleTransitionComparisonTest {
             }
 
         assertEquals(
-            4 * 10,
+            4 * 30,
             results.size
         )
 
@@ -165,10 +165,10 @@ class FullCarbleTransitionComparisonTest {
             "======================================================================================================================"
         )
         println(
-            "FULL DEGRADATION CALIBRATION — B0 vs MM vs 2RH vs CARBLE — 10 PAIRED SEEDS"
+            "FULL CARBLE TRANSITION — B0 vs MM vs 2RH vs CARBLE — 30 PAIRED SEEDS"
         )
         println(
-            "protocol,meanPDR,meanLatency,meanAttempts,meanRetrans,twoRhHIGH,twoRhLOW,CARBLE_HIGH,M1,M2,M3,CARBLE_LOW,carry,probe,minQ"
+            "protocol,meanPDR,meanLatency,meanAttempts,meanRetrans,HIGH,M1,M2,M3,LOW,carry,probe,minQ"
         )
 
         FullCarbleTransitionComparisonRunner
@@ -237,9 +237,10 @@ class FullCarbleTransitionComparisonTest {
                     "$strictOrderedTransitions / ${carble.size}"
         )
 
-        assertTrue(
-            "Calibration schedule produced no run with the intended M1<M2<M3<LOW first-entry order.",
-            strictOrderedTransitions > 0
+        assertEquals(
+            "The frozen full-transition scenario no longer preserves the intended first-entry ordering.",
+            carble.size,
+            strictOrderedTransitions
         )
 
         val m1ToLowLeadTimes =
@@ -294,7 +295,7 @@ class FullCarbleTransitionComparisonTest {
 
         val outputDirectory =
             File(
-                "build/research/CARBLE-FULL-TRANSITION-CALIBRATION"
+                "build/research/CARBLE-FULL-TRANSITION-COMPARISON"
             )
 
         if (outputDirectory.exists()) {

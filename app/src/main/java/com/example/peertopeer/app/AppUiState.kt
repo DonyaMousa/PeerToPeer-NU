@@ -1,0 +1,68 @@
+package com.example.peertopeer.app
+
+import com.example.peertopeer.domain.identity.NodeIdentity
+import com.example.peertopeer.network.model.ChatMessage
+import com.example.peertopeer.network.model.PeerGroup
+import com.example.peertopeer.network.model.PeerInfo
+import com.example.peertopeer.network.model.ProtocolType
+import com.example.peertopeer.network.model.SavedPeer
+
+data class AppUiState(
+    val identity: NodeIdentity,
+    val lastDecision: String = "Waiting for a message",
+    val liveDecisionMessageId: String? = null,
+    val liveDecisionDestination: String? = null,
+    val liveMmSelectedRoute: String? = null,
+    val liveMmTotalCost: Double? = null,
+    val liveMmReason: String? = null,
+    val liveMmCandidates: List<String> = emptyList(),
+    val liveCarbleStage: String? = null,
+    val liveCarbleStageReason: String? = null,
+    val liveCurrentHopQ: Double? = null,
+    val liveRouteQ: Double? = null,
+    val liveQComponents: String? = null,
+    val liveForwardingAction: String? = null,
+    val livePrimaryHop: String? = null,
+    val liveBackupHop: String? = null,
+    val liveQueueEvidence: String? = null,
+    val bleStatus: String = "Stopped",
+    val peers: List<PeerInfo> = emptyList(),
+    val savedPeers: List<SavedPeer> = emptyList(),
+    val messages: List<ChatMessage> = emptyList(),
+    val groups: List<PeerGroup> = emptyList(),
+    val pinnedPeerIds: Set<String> = emptySet(),
+    val selectedProtocol: ProtocolType = ProtocolType.CARBLE,
+    val selectedPeerId: String? = null,
+    val selectedGroupId: String? = null,
+    val onboardingRevision: Long = 0L,
+    val directMeasurementRunning: Boolean = false,
+    val directMeasurementProgress: Int = 0,
+    val directMeasurementTotal: Int = 0,
+    val directMeasurementStatus: String? = null,
+    val lastExportPath: String? = null,
+    val researchEvents: Int = 0,
+    val backgroundServiceEnabled: Boolean = false,
+    val bleSupported: Boolean = true,
+    val advertisingSupported: Boolean = true,
+    val experimentRunning: Boolean = false,
+    val experimentProgress: Int = 0,
+    val experimentTotal: Int = 0,
+    val experimentLabel: String? = null,
+    val experimentCondition: String? = null,
+    val experimentPhase: String = "IDLE",
+    val experimentAcked: Int = 0,
+    val experimentStatus: String? = null,
+    val experimentCandidateRelays: List<String> = emptyList(),
+    val lastExperimentRawStage: String? = null,
+    val lastExperimentStage: String? = null,
+    val lastExperimentHysteresisStatus: String? = null,
+    val lastExperimentConfidence: Double? = null,
+    val lastExperimentComponents: String? = null,
+    val lastExperimentPrimaryHop: String? = null,
+    val lastExperimentBackupHop: String? = null,
+    val lastExperimentRoute: String? = null,
+    val experimentPdrPercent: Double? = null,
+    val experimentMedianLatencyMs: Long? = null,
+    val experimentFirstHopSummary: String? = null,
+    val experimentStageSummary: String? = null
+)

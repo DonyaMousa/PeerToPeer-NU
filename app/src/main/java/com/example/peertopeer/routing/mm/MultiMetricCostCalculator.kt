@@ -70,11 +70,7 @@ class MultiMetricCostCalculator(
          * can become abnormal before PDR falls, which is why
          * queue state belongs in MM.
          */
-        val queueNormalized =
-            state.queueOccupancy
-                .toDouble() /
-                    state.queueCapacity
-                        .toDouble()
+        val queueNormalized = QueuePressure.normalized(state)
 
         /*
          * =================================================

@@ -50,7 +50,24 @@ data class MultiMetricLinkState(
      * this stays 0.0 unless an explicit resource
      * experiment supplies a value.
      */
-    val energyPenaltyNormalized: Double = 0.0
+    val energyPenaltyNormalized: Double = 0.0,
+
+    /*
+     * Optional physical-BLE observations. Null preserves the frozen
+     * simulator behavior; the Android runtime supplies real values.
+     */
+    val freshnessNormalized: Double? = null,
+    val signalReliabilityNormalized: Double? = null,
+
+    /*
+     * Physical-runtime queue scale for the adaptive pressure model:
+     *
+     * pressure = depth / (depth + k)
+     *
+     * Null preserves the frozen simulation model (depth / capacity).
+     * The Android runtime supplies k from observed ACK service traffic.
+     */
+    val adaptiveQueueScaleK: Double? = null
 
 ) {
 
@@ -84,5 +101,9 @@ data class MultiMetricLinkState(
         require(
             energyPenaltyNormalized in 0.0..1.0
         )
+
+        freshnessNormalized?.let { require(it in 0.0..1.0) }
+        signalReliabilityNormalized?.let { require(it in 0.0..1.0) }
+        adaptiveQueueScaleK?.let { require(it > 0.0) }
     }
 }
